@@ -20,8 +20,8 @@ sudo apt-get install -y \
     libcairo2-dev \
     pkg-config \
     gir1.2-gtk-3.0 \
-    gir1.2-webkit2-4.1 \
-    libwebkit2gtk-4.1-dev
+    gir1.2-webkit2-4.0 \
+    libwebkit2gtk-4.0-dev
 
 # 0.1 Install Node.js if not present
 if ! command -v node &> /dev/null; then
