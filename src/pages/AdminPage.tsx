@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
 import { addUser, deleteUser, updateUser, updateSettings } from '../services/database';
 import { formatDateTime } from '../utils/formatters';
@@ -205,12 +206,12 @@ export default function AdminPage() {
           >
             ⚙️ الإعدادات
           </button>
-          <a
-            href="/"
+          <Link
+            to="/"
             className="px-4 py-2 text-sm font-medium text-stone-500 bg-stone-100 rounded-xl hover:bg-stone-200 transition-colors"
           >
             ← العودة للتطبيق
-          </a>
+          </Link>
         </div>
       </div>
 

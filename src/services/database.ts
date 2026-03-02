@@ -18,11 +18,17 @@ let listeners: Listener[] = [];
 // All writes go directly to db.json on disk via the Python launcher's
 // POST /api/save-db endpoint. No localStorage is used at all.
 function notify() {
-  fetch('/api/save-db', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(db),
-  }).catch(() => { /* dev mode / no launcher running â€“ ignore */ });
+  // sendBeacon survives page reloads/unloads (unlike fetch which is cancelled).
+  // This prevents data loss when the user navigates away immediately after a write.
+  const payload = new Blob([JSON.stringify(db)], { type: 'application/json' });
+  if (!navigator.sendBeacon('/api/save-db', payload)) {
+    // Fallback: sendBeacon rate-limited — use fetch
+    fetch('/api/save-db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(db),
+    }).catch(() => { /* dev mode / no launcher running — ignore */ });
+  }
   listeners.forEach((fn) => fn());
 }
 
