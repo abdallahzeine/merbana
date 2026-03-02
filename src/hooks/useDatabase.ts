@@ -9,7 +9,7 @@ export function useDatabase() {
   const [register, setRegister] = useState<RegisterState>({ currentBalance: 0, transactions: [] });
   const [users, setUsers] = useState<StoreUser[]>([]);
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
-  const [settings, setSettings] = useState<StoreSettings>({ companyName: 'Merbana POS' });
+  const [settings, setSettings] = useState<StoreSettings>({ companyName: '' });
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
 

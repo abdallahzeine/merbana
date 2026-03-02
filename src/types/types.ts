@@ -77,6 +77,7 @@ export interface Database {
   activityLog: ActivityLog[];
   settings: StoreSettings;
   debtors: Debtor[];
+  lastStockReset?: string;  // ISO date string — stored in db.json to track daily stock reset
 }
 
 export interface CashTransaction {
