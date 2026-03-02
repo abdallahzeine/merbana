@@ -243,19 +243,60 @@ info "Creating Python venv at ${VENV_APP} …"
 python3 -m venv --system-site-packages --clear "${VENV_APP}"
 success "venv created."
 
+# Verify that python3-gi (system PyGObject) is visible inside the venv
+if ! "${VENV_APP}/bin/python" -c "import gi" 2>/dev/null; then
+    warn "'gi' (PyGObject) is not visible inside the venv."
+    warn "Trying to install PyGObject directly into the venv as fallback …"
+    "${VENV_APP}/bin/pip" install --quiet PyGObject || \
+        die "Could not make 'gi' available. Install python3-gi system package and re-run."
+fi
+success "PyGObject (gi) is accessible in venv."
+
 source "${VENV_APP}/bin/activate"
 
 info "Installing pywebview into venv …"
 "${VENV_APP}/bin/pip" install --quiet --upgrade pip
 
-if [[ "${WEBKIT_VER}" == "4.0" ]]; then
-    PYWEBVIEW_SPEC="pywebview>=4.0,<5.0"
-    info "  → WebKit 4.0: pinning pywebview < 5.0"
-else
-    PYWEBVIEW_SPEC="pywebview>=5.0"
-fi
+# Remove any previously installed (wrong-version) pywebview to avoid conflicts
+"${VENV_APP}/bin/pip" uninstall -y pywebview 2>/dev/null || true
+
+# Pin to the exact latest release that matches the installed WebKit2GTK:
+#   WebKit2 4.0 → pywebview 4.4.1  (last stable 4.x, uses gi WebKit2 4.0)
+#   WebKit2 4.1 → pywebview 5.x    (requires gi WebKit2 4.1)
+#   WebKitGTK 6.0 → pywebview 5.x  (requires gi WebKit 6.0 / 4.1 compat)
+case "${WEBKIT_VER}" in
+    4.0)
+        PYWEBVIEW_SPEC="pywebview==4.4.1"
+        info "  → WebKit2 4.0 detected: installing pywebview 4.4.1"
+        ;;
+    4.1)
+        PYWEBVIEW_SPEC="pywebview>=5.0,<6.0"
+        info "  → WebKit2 4.1 detected: installing pywebview 5.x"
+        ;;
+    6.0)
+        PYWEBVIEW_SPEC="pywebview>=5.0,<6.0"
+        info "  → WebKitGTK 6.0 detected: installing pywebview 5.x"
+        ;;
+    *)
+        PYWEBVIEW_SPEC="pywebview>=4.4.1"
+        warn "  → Unknown WebKit version; installing latest pywebview"
+        ;;
+esac
+
 "${VENV_APP}/bin/pip" install --quiet "${PYWEBVIEW_SPEC}"
 success "pywebview installed (${PYWEBVIEW_SPEC})."
+
+# ── Smoke test: verify pywebview can actually be imported ─────────────────────
+info "Smoke-testing pywebview import …"
+if "${VENV_APP}/bin/python" -c "import webview; print('pywebview', webview.__version__)" 2>/dev/null; then
+    success "pywebview import OK."
+else
+    warn "pywebview import failed — printing diagnostic info:"
+    "${VENV_APP}/bin/python" -c "import webview" || true
+    warn "The app will fall back to the system browser at runtime."
+    warn "To fix: ensure the correct gir1.2-webkit2-X.Y package is installed."
+fi
+
 deactivate
 
 # ── 8. Copy files into POS/ ───────────────────────────────────────────────────
