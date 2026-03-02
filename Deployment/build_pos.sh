@@ -16,6 +16,9 @@
 #  5. PyInstaller --onefile  →  single  Merbana  binary
 #  6. Creates  ~/Desktop/POS/  and copies everything there
 #
+#  NOTE: Safe to run as root (sudo) — the output is placed on the real
+#        user's Desktop, not /root/Desktop.
+#
 #  After the script finishes you will find on the Desktop:
 #
 #      ~/Desktop/POS/
@@ -38,7 +41,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENV_DIR="${PROJECT_ROOT}/.venv"
 DIST_WEB="${PROJECT_ROOT}/dist"          # Vite output
-POS_DIR="${HOME}/Desktop/POS"
+
+# ── Resolve the REAL user's Desktop even when running as root ─────────────────
+# Priority: SUDO_USER  →  PKEXEC_UID  →  last non-root login  →  current $HOME
+if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    REAL_USER="${SUDO_USER}"
+elif [[ -n "${PKEXEC_UID:-}" ]]; then
+    REAL_USER="$(id -un "${PKEXEC_UID}")"
+elif id -nu 1000 &>/dev/null 2>&1; then
+    REAL_USER="$(id -nu 1000)"
+else
+    REAL_USER="$(logname 2>/dev/null || echo "${USER}")"
+fi
+
+REAL_HOME=$(getent passwd "${REAL_USER}" | cut -d: -f6)
+[[ -z "${REAL_HOME}" ]] && REAL_HOME="${HOME}"
+
+POS_DIR="${REAL_HOME}/Desktop/POS"
 
 echo ""
 echo -e "${BOLD}=================================================================${RESET}"
@@ -303,7 +322,7 @@ fi
 success "Output assembled."
 
 # ── 11. .desktop shortcut for the app launcher ────────────────────────────────
-DESKTOP_ENTRY="${HOME}/Desktop/Merbana.desktop"
+DESKTOP_ENTRY="${REAL_HOME}/Desktop/Merbana.desktop"
 cat > "${DESKTOP_ENTRY}" <<EOF
 [Desktop Entry]
 Version=1.0
@@ -326,6 +345,16 @@ success "Desktop shortcut created: ${DESKTOP_ENTRY}"
 info "Cleaning up build artefacts …"
 rm -rf "${OUT_PYINSTALLER}" "${BUILD_WORK}" "${SPEC_FILE}"
 success "Clean."
+
+# ── 13. Fix ownership (running as root → give files back to real user) ─────────
+if [[ "${EUID}" -eq 0 && "${REAL_USER}" != "root" ]]; then
+    info "Fixing ownership of ${POS_DIR} → ${REAL_USER} …"
+    chown -R "${REAL_USER}:${REAL_USER}" "${POS_DIR}" 2>/dev/null || \
+    chown -R "${REAL_USER}" "${POS_DIR}"
+    chown "${REAL_USER}:${REAL_USER}" "${DESKTOP_ENTRY}" 2>/dev/null || \
+    chown "${REAL_USER}" "${DESKTOP_ENTRY}"
+    success "Ownership fixed."
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
