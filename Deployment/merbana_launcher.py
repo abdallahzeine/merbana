@@ -19,6 +19,10 @@ import socketserver
 import sys
 import threading
 
+# Path to data/db.json — set before starting the server so the HTTP handler can
+# write the database back to disk on every /api/save-db POST request.
+_data_path: str = ""
+
 # ── Configuration ────────────────────────────────────────────
 PORT = 8741
 HOST = "127.0.0.1"
@@ -57,7 +61,7 @@ def get_dist_path() -> str:
 # ── SPA HTTP handler ─────────────────────────────────────────
 
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
-    """SimpleHTTPRequestHandler with React Router fallback."""
+    """SimpleHTTPRequestHandler with React Router fallback and a /api/save-db write endpoint."""
 
     def do_GET(self):
         file_path = os.path.join(self.directory, self.path.lstrip("/"))
@@ -66,12 +70,45 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         self.path = "/index.html"
         return super().do_GET()
 
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests (needed for POST from the webview)."""
+        self.send_response(200)
+        self.end_headers()  # CORS headers added by end_headers() override below
+
+    def do_POST(self):
+        """Write the posted JSON body atomically to data/db.json on disk."""
+        if self.path == "/api/save-db":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length)
+                if _data_path:
+                    # Atomic write: write to .tmp then rename so a crash never
+                    # corrupts the live database file.
+                    tmp = _data_path + ".tmp"
+                    with open(tmp, "wb") as f:
+                        f.write(body)
+                    os.replace(tmp, _data_path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+            except Exception as exc:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(f'{{"error":"{exc}"}}'.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def log_message(self, format, *args):  # silence request logs
         pass
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         super().end_headers()
 
 
@@ -113,6 +150,9 @@ def show_fatal(title: str, message: str) -> None:
 # ── pywebview window ─────────────────────────────────────────
 
 def run_with_webview(dist_path: str, port: int) -> None:
+    global _data_path
+    _data_path = os.path.join(os.path.dirname(dist_path), "data", "db.json")
+
     import webview  # noqa: PLC0415
 
     httpd = start_server(dist_path, port)
@@ -136,6 +176,9 @@ def run_with_webview(dist_path: str, port: int) -> None:
 def run_with_browser(dist_path: str, port: int) -> None:
     """Fallback: open the default browser + a small tkinter control window.
     Degrades gracefully if tkinter is unavailable (prints URL and blocks)."""
+    global _data_path
+    _data_path = os.path.join(os.path.dirname(dist_path), "data", "db.json")
+
     import webbrowser
 
     httpd = start_server(dist_path, port)

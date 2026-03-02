@@ -313,6 +313,8 @@ if [[ -d "${DATA_SRC}" ]]; then
     info "Copying data/ …"
     rm -rf "${POS_DIR}/data"
     cp -r "${DATA_SRC}" "${POS_DIR}/data"
+    # Ensure the app (running as the real user) can write db.json back to disk
+    chmod -R u+rw "${POS_DIR}/data"
     success "data/ copied."
 fi
 

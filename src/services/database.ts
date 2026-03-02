@@ -22,6 +22,13 @@ function notify() {
   } catch (err) {
     console.error('Failed to save to localStorage:', err);
   }
+  // Fire-and-forget write-through to db.json on disk (only works when the
+  // Python launcher is running — silently ignored in dev / browser mode).
+  fetch('/api/save-db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(db),
+  }).catch(() => { /* not running via launcher – ignore */ });
   listeners.forEach((fn) => fn());
 }
 
