@@ -106,6 +106,9 @@ success "Core packages installed."
 #   Ubuntu 20.04 / Debian 11  → webkit2gtk-4.0  / gir1.2-webkit2-4.0
 apt_pkg_exists() { apt-cache show "$1" &>/dev/null 2>&1; }
 
+# WEBKIT_VER is used later to pin pywebview and set PyInstaller hidden imports
+WEBKIT_VER="4.0"   # default / safest assumption
+
 info "Installing GTK + WebKit2GTK system libraries …"
 case "${PKG_MGR}" in
     apt)
@@ -121,12 +124,15 @@ case "${PKG_MGR}" in
         if apt_pkg_exists "gir1.2-webkitgtk-6.0"; then
             info "  → Using WebKitGTK 6.0 (Ubuntu 24.04 / Debian 13)"
             pkg_install gir1.2-webkitgtk-6.0 libwebkitgtk-6.0-dev
+            WEBKIT_VER="6.0"
         elif apt_pkg_exists "gir1.2-webkit2-4.1"; then
             info "  → Using WebKit2GTK 4.1 (Ubuntu 22.04 / Debian 12)"
             pkg_install gir1.2-webkit2-4.1 libwebkit2gtk-4.1-dev
+            WEBKIT_VER="4.1"
         elif apt_pkg_exists "gir1.2-webkit2-4.0"; then
             info "  → Using WebKit2GTK 4.0 (Ubuntu 20.04 / Debian 11)"
             pkg_install gir1.2-webkit2-4.0 libwebkit2gtk-4.0-dev
+            WEBKIT_VER="4.0"
         else
             warn "No WebKit2GTK dev package found in apt cache."
             warn "Try:  sudo add-apt-repository ppa:webkit-team/ppa  then re-run."
@@ -138,21 +144,25 @@ case "${PKG_MGR}" in
         if "${PKG_MGR}" info webkit2gtk4.1 &>/dev/null 2>&1; then
             pkg_install python3-gobject python3-cairo gobject-introspection \
                 webkit2gtk4.1 webkit2gtk4.1-devel gtk3 gtk3-devel
+            WEBKIT_VER="4.1"
         else
             pkg_install python3-gobject python3-cairo gobject-introspection \
                 webkit2gtk3 webkit2gtk3-devel gtk3 gtk3-devel
+            WEBKIT_VER="4.0"
         fi
         ;;
     pacman)
         # Arch always ships the latest; try 4.1 then 4.0
         if pacman -Ss "^webkit2gtk-4.1$" &>/dev/null 2>&1; then
             pkg_install python-gobject webkit2gtk-4.1 gtk3
+            WEBKIT_VER="4.1"
         else
             pkg_install python-gobject webkit2gtk gtk3
+            WEBKIT_VER="4.0"
         fi
         ;;
 esac
-success "WebKit2GTK libraries installed."
+success "WebKit2GTK ${WEBKIT_VER} libraries installed."
 
 # ── 4. Node.js 20 LTS ─────────────────────────────────────────────────────────
 install_nodejs() {
@@ -201,11 +211,20 @@ success "venv activated: $(python --version)"
 # ── 6. Python packages ────────────────────────────────────────────────────────
 info "Installing Python packages (pywebview, pyinstaller) …"
 pip install --quiet --upgrade pip
+
+# pywebview 5+ requires WebKit2GTK ≥ 4.1.  On Ubuntu 20.04 (4.0) use 4.x.
+if [[ "${WEBKIT_VER}" == "4.0" ]]; then
+    PYWEBVIEW_SPEC="pywebview>=4.0,<5.0"
+    info "  → WebKit 4.0 detected: pinning pywebview < 5.0 for compatibility"
+else
+    PYWEBVIEW_SPEC="pywebview>=5.0"
+fi
+
 pip install --quiet \
-    "pywebview>=5.0" \
+    "${PYWEBVIEW_SPEC}" \
     "pyinstaller>=6.0" \
     "pyinstaller-hooks-contrib>=2024.0"
-success "Python packages installed."
+success "Python packages installed (pywebview spec: ${PYWEBVIEW_SPEC})."
 
 # ── 7. Node dependencies ──────────────────────────────────────────────────────
 info "Installing Node.js dependencies …"
@@ -232,6 +251,13 @@ LAUNCHER="${PROJECT_ROOT}/Deployment/merbana_launcher.py"
 # Clean previous artefacts
 rm -rf "${OUT_PYINSTALLER}" "${BUILD_WORK}" "${SPEC_FILE}"
 
+# PyInstaller hidden imports — GI namespace depends on webkit version
+if [[ "${WEBKIT_VER}" == "6.0" ]]; then
+    WEBKIT_GI_IMPORT="gi.repository.WebKit"          # WebKitGTK 6 renamed the GI ns
+else
+    WEBKIT_GI_IMPORT="gi.repository.WebKit2"         # WebKit2GTK 4.0 / 4.1
+fi
+
 python -m PyInstaller \
     --onefile \
     --noconsole \
@@ -246,8 +272,7 @@ python -m PyInstaller \
     --hidden-import "webview.platforms.qt" \
     --hidden-import "gi" \
     --hidden-import "gi.repository.Gtk" \
-    --hidden-import "gi.repository.WebKit2" \
-    --hidden-import "gi.repository.WebKit" \
+    --hidden-import "${WEBKIT_GI_IMPORT}" \
     "${LAUNCHER}"
 
 BINARY="${OUT_PYINSTALLER}/Merbana"
