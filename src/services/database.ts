@@ -16,20 +16,60 @@ let listeners: Listener[] = [];
 
 // â”€â”€ Persist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // All writes go directly to db.json on disk via the Python launcher's
-// POST /api/save-db endpoint. No localStorage is used at all.
-function notify() {
-  // sendBeacon survives page reloads/unloads (unlike fetch which is cancelled).
-  // This prevents data loss when the user navigates away immediately after a write.
-  const payload = new Blob([JSON.stringify(db)], { type: 'application/json' });
-  if (!navigator.sendBeacon('/api/save-db', payload)) {
-    // Fallback: sendBeacon rate-limited — use fetch
-    fetch('/api/save-db', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(db),
-    }).catch(() => { /* dev mode / no launcher running — ignore */ });
+// POST /api/save-db endpoint.  No localStorage is used at all.
+//
+// Saves are debounced: multiple rapid mutations (e.g. addOrder touching
+// stock + register) are batched into a single write after a short idle
+// window.  UI listeners still fire immediately so the screen stays in
+// sync with the in-memory state.
+
+const SAVE_DEBOUNCE_MS = 100;          // wait 100 ms of idle before saving
+const BEACON_MAX_BYTES  = 63_000;      // conservative sendBeacon limit (spec ~64 KB)
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Flush the pending debounced save immediately (used on page unload). */
+function flushSave() {
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
   }
+  persistToDisk();
+}
+
+/** Actually send the current db state to the launcher. */
+function persistToDisk() {
+  const json = JSON.stringify(db);
+
+  // sendBeacon survives page unloads but has a ~64 KB payload limit.
+  // For larger payloads fall back to fetch with keepalive (still survives
+  // simple navigations within the SPA).
+  if (json.length <= BEACON_MAX_BYTES) {
+    const blob = new Blob([json], { type: 'application/json' });
+    if (navigator.sendBeacon('/api/save-db', blob)) return;
+  }
+
+  // Fallback
+  fetch('/api/save-db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: json,
+    keepalive: true,
+  }).catch(() => { /* dev mode / no launcher — ignore */ });
+}
+
+/** Schedule a debounced save and notify UI listeners immediately. */
+function notify() {
+  // Debounce the disk write so rapid mutations batch into one save.
+  if (_saveTimer !== null) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => { _saveTimer = null; persistToDisk(); }, SAVE_DEBOUNCE_MS);
+
+  // UI listeners fire right away — the in-memory `db` is already updated.
   listeners.forEach((fn) => fn());
+}
+
+// Ensure pending writes are flushed when the page unloads.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', flushSave);
 }
 
 export function subscribe(listener: Listener): () => void {
@@ -140,7 +180,7 @@ export function deleteCategory(id: string): boolean {
   return false;
 }
 
-// â”€â”€ Products â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ Products 
 export function getProducts(): Product[] {
   return [...db.products];
 }
@@ -167,7 +207,7 @@ export function deleteProduct(id: string): boolean {
   return false;
 }
 
-// â”€â”€ Stock Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ Stock Management 
 export function adjustStock(productId: string, adjustment: number): Product | null {
   const idx = db.products.findIndex((p) => p.id === productId);
   if (idx === -1) return null;
@@ -331,8 +371,18 @@ export function withdrawCash(amount: number, note: string): CashTransaction {
 }
 
 export function closeShift(amountTaken: number, note?: string): CashTransaction {
-  const tx = addCashTransaction('shift_close', amountTaken, note || `Shift closed â€” took ${amountTaken.toFixed(2)}`);
-  db.register.currentBalance = 0;
+  // Record the shift_close transaction, then immediately zero the balance
+  // BEFORE notify() fires, so the on-disk state is never in an inconsistent
+  // intermediate where the deduction happened but the zero didn't.
+  const tx: CashTransaction = {
+    id: uuidv4(),
+    type: 'shift_close',
+    amount: -Math.abs(amountTaken),
+    note: note || `Shift closed — took ${amountTaken.toFixed(2)}`,
+    date: new Date().toISOString(),
+  };
+  db.register.transactions.push(tx);
+  db.register.currentBalance = 0;   // zero in one step — no intermediate save
   notify();
   return tx;
 }
