@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
 import { addUser, deleteUser, updateUser, updateSettings } from '../services/database';
@@ -34,19 +34,15 @@ export default function AdminPage() {
   // View state
   const [activeTab, setActiveTab] = useState<'users' | 'log' | 'settings'>('users');
 
-  // Settings state
-  const [companyName, setCompanyName] = useState(settings?.companyName ?? '');
+  // Settings state — null means "not yet edited by user"; fall back to persisted value
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const displayName = companyName ?? (settings?.companyName ?? '');
   const [saveMessage, setSaveMessage] = useState('');
-
-  // Re-sync companyName when DB finishes loading (settings starts as default before db.json loads)
-  useEffect(() => {
-    setCompanyName(settings?.companyName ?? '');
-  }, [settings]);
 
   function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
-    if (!companyName.trim()) return;
-    updateSettings({ companyName: companyName.trim() });
+    if (!displayName.trim()) return;
+    updateSettings({ companyName: displayName.trim() });
     setSaveMessage('تم حفظ الإعدادات بنجاح');
     setTimeout(() => setSaveMessage(''), 3000);
   }
@@ -255,7 +251,7 @@ export default function AdminPage() {
                   <p className="text-xs text-stone-400 mb-3">سيظهر هذا الاسم في الفواتير والتقارير وشاشة الدخول.</p>
                   <input
                     type="text"
-                    value={companyName}
+                    value={displayName}
                     onChange={e => setCompanyName(e.target.value)}
                     className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
                     placeholder="اسم المتجر"
@@ -271,7 +267,7 @@ export default function AdminPage() {
                   
                   <button
                     type="submit"
-                    disabled={!companyName.trim()}
+                    disabled={!displayName.trim()}
                     className="px-6 py-2.5 bg-violet-600 text-white font-medium rounded-xl hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     حفظ التغييرات

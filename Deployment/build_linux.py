@@ -11,7 +11,7 @@ Steps
 
 Usage
 -----
-    Run this script ON a Linux machine (or WSL / GitHub Actions):
+    Run this script ON a Linux machine:
 
         python Deployment/build_linux.py [--skip-frontend] [--backend gtk|qt]
 
@@ -34,11 +34,10 @@ Requirements
 
 Notes
 -----
-* Cross-compilation is NOT supported: run this script on a Linux host
-  (physical machine, VM, Docker, or WSL2 with a native filesystem).
+* This script must be run on a Linux host. It will exit immediately on
+  any other OS.
 * The produced binary is dynamically linked to system libs (WebKit2GTK /
-  Qt).  Distribute on a machine with the same OS / lib versions, or build
-  inside a Docker image that matches your deployment target.
+  Qt).  Distribute on a machine with the same OS / lib versions.
 """
 
 import argparse
@@ -78,7 +77,7 @@ def check_webview_backend(backend: str) -> None:
             import gi  # noqa: F401
         except ImportError:
             print(
-                "\n⚠  PyGObject (gi) not found.  Install system packages\n"
+                "\n\u2717  PyGObject (gi) not found.  Install system packages\n"
                 "   that match your Ubuntu/Debian version:\n\n"
                 "   Ubuntu 24.04 / Debian 13:\n"
                 "     sudo apt install python3-gi python3-gi-cairo "
@@ -90,6 +89,7 @@ def check_webview_backend(backend: str) -> None:
                 "     sudo apt install python3-gi python3-gi-cairo "
                 "gir1.2-gtk-3.0 gir1.2-webkit2-4.0\n"
             )
+            sys.exit(1)
     elif backend == "qt":
         try:
             from PyQt5 import QtWebEngineWidgets  # noqa: F401
@@ -98,21 +98,17 @@ def check_webview_backend(backend: str) -> None:
                 from PySide6 import QtWebEngineWidgets  # noqa: F401
             except ImportError:
                 print(
-                    "\n⚠  PyQt5/PyQtWebEngine not found.\n"
+                    "\n\u2717  PyQt5/PyQtWebEngine not found.\n"
                     "   Install:  pip install PyQt5 PyQtWebEngine qtpy\n"
                 )
+                sys.exit(1)
 
 
 # ── Main ───────────────────────────────────────────────────────
 
 def main() -> None:
     if platform.system() != "Linux":
-        print(
-            "⚠  This script is intended to be run on Linux.\n"
-            "   You are on: " + platform.system() + "\n"
-            "   Use WSL2, a Linux VM, or Docker to produce a Linux binary.\n"
-            "   For Windows builds use:  python Deployment/build_distribution.py"
-        )
+        print(f"\u2717  This script must be run on Linux. Detected: {platform.system()}")
         sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Build Merbana Linux distributable")

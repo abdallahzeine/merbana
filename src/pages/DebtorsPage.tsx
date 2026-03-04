@@ -2,15 +2,10 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
 import { addDebtor, markDebtorPaid, deleteDebtor } from '../services/database';
+import { formatDate } from '../utils/formatters';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('ar-SY', { minimumFractionDigits: 0 });
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ar-SY', {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
 }
 
 export default function DebtorsPage() {

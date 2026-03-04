@@ -17,26 +17,11 @@ let listeners: Listener[] = [];
 // â”€â”€ Persist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // All writes go directly to db.json on disk via the Python launcher's
 // POST /api/save-db endpoint.  No localStorage is used at all.
-//
-// Saves are debounced: multiple rapid mutations (e.g. addOrder touching
-// stock + register) are batched into a single write after a short idle
-// window.  UI listeners still fire immediately so the screen stays in
-// sync with the in-memory state.
+// Every mutation triggers an immediate save on every data change.
 
-const SAVE_DEBOUNCE_MS = 100;          // wait 100 ms of idle before saving
-const BEACON_MAX_BYTES  = 63_000;      // conservative sendBeacon limit (spec ~64 KB)
-let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+const BEACON_MAX_BYTES = 63_000;      // conservative sendBeacon limit (spec ~64 KB)
 
-/** Flush the pending debounced save immediately (used on page unload). */
-function flushSave() {
-  if (_saveTimer !== null) {
-    clearTimeout(_saveTimer);
-    _saveTimer = null;
-  }
-  persistToDisk();
-}
-
-/** Actually send the current db state to the launcher. */
+/** Send the current db state to the launcher immediately. */
 function persistToDisk() {
   const json = JSON.stringify(db);
 
@@ -57,19 +42,10 @@ function persistToDisk() {
   }).catch(() => { /* dev mode / no launcher — ignore */ });
 }
 
-/** Schedule a debounced save and notify UI listeners immediately. */
+/** Save to disk immediately and notify UI listeners. */
 function notify() {
-  // Debounce the disk write so rapid mutations batch into one save.
-  if (_saveTimer !== null) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => { _saveTimer = null; persistToDisk(); }, SAVE_DEBOUNCE_MS);
-
-  // UI listeners fire right away — the in-memory `db` is already updated.
+  persistToDisk();
   listeners.forEach((fn) => fn());
-}
-
-// Ensure pending writes are flushed when the page unloads.
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', flushSave);
 }
 
 export function subscribe(listener: Listener): () => void {
