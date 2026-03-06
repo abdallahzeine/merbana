@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 
@@ -11,6 +11,14 @@ export default function Sidebar() {
   // Badge counts
   const lowStockCount = products.filter(p => p.trackStock && (p.stock || 0) <= 5).length;
   const unpaidDebtorCount = debtors.filter(d => !d.paidAt).length;
+
+  useEffect(() => {
+    function handleResize() {
+      if (window.innerWidth >= 1024) setOpen(false);
+    }
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const NAV_ITEMS = [
     { to: '/', label: 'الرئيسية', icon: '🏠', badge: 0 },
@@ -24,7 +32,6 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="print:hidden">
     <>
       {/* Mobile hamburger */}
       <button
@@ -51,7 +58,7 @@ export default function Sidebar() {
         className={`
           fixed inset-y-0 right-0 z-40 w-64 bg-white border-l border-stone-200 text-stone-800 flex flex-col shadow-xl
           transform transition-transform duration-300 ease-in-out
-          lg:relative lg:translate-x-0 lg:shadow-none print:hidden
+          lg:sticky lg:top-0 lg:h-screen lg:shrink-0 lg:w-72 lg:translate-x-0 lg:shadow-none xl:w-80 print:hidden
           ${open ? 'translate-x-0' : 'translate-x-full'}
         `}
       >
@@ -82,7 +89,7 @@ export default function Sidebar() {
               <span className="text-lg">{item.icon}</span>
               <span className="flex-1">{item.label}</span>
               {item.badge > 0 && (
-                <span className="min-w-[20px] h-5 px-1.5 bg-amber-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none">
+                <span className="min-w-5 h-5 px-1.5 bg-amber-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none">
                   {item.badge}
                 </span>
               )}
@@ -115,6 +122,5 @@ export default function Sidebar() {
         </div>
       </aside>
     </>
-    </div>
   );
 }
