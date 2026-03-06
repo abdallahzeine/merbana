@@ -1,5 +1,6 @@
 ﻿import { v4 as uuidv4 } from 'uuid';
 import type { Database, Product, Category, Order, CashTransaction, RegisterState, StoreUser, ActivityLog, StoreSettings, Debtor } from '../types/types';
+import { DEFAULT_PASSWORD_REQUIREMENTS } from '../utils/passwordPolicy';
 
 type Listener = () => void;
 
@@ -14,12 +15,38 @@ const defaultSettings: StoreSettings = {
     customerCopies: 1,
     kitchenCopies: 1,
   },
+  security: {
+    passwordRequiredFor: { ...DEFAULT_PASSWORD_REQUIREMENTS },
+  },
 };
+
+function mergeSettings(partial?: Partial<StoreSettings>): StoreSettings {
+  return {
+    ...defaultSettings,
+    ...(partial || {}),
+    printerSettings: {
+      ...defaultSettings.printerSettings,
+      ...(partial?.printerSettings || {}),
+      defaultOptions: {
+        ...defaultSettings.printerSettings.defaultOptions,
+        ...(partial?.printerSettings?.defaultOptions || {}),
+      },
+    },
+    security: {
+      ...defaultSettings.security,
+      ...(partial?.security || {}),
+      passwordRequiredFor: {
+        ...defaultSettings.security.passwordRequiredFor,
+        ...(partial?.security?.passwordRequiredFor || {}),
+      },
+    },
+  };
+}
 let db: Database = {
   products: [], categories: [], orders: [],
   register: { currentBalance: 0, transactions: [] },
   users: [], activityLog: [],
-  settings: { ...defaultSettings },
+  settings: mergeSettings(),
   debtors: [],
   lastStockReset: '',
 };
@@ -87,18 +114,7 @@ export function loadDatabase(): Promise<Database> {
         register:    data.register  || { currentBalance: 0, transactions: [] },
         users:       Array.isArray(data.users)       ? data.users       : [],
         activityLog: Array.isArray(data.activityLog) ? data.activityLog : [],
-        settings: {
-          ...defaultSettings,
-          ...(data.settings || {}),
-          printerSettings: {
-            ...defaultSettings.printerSettings,
-            ...(data.settings?.printerSettings || {}),
-            defaultOptions: {
-              ...defaultSettings.printerSettings.defaultOptions,
-              ...(data.settings?.printerSettings?.defaultOptions || {}),
-            },
-          },
-        },
+        settings: mergeSettings(data.settings),
         debtors:     Array.isArray(data.debtors)     ? data.debtors     : [],
         lastStockReset: data.lastStockReset || '',
       };
@@ -254,22 +270,11 @@ export function checkDailyReset() {
 
 // â”€â”€ Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function getSettings(): StoreSettings {
-  return { ...db.settings };
+  return mergeSettings(db.settings);
 }
 
 export function updateSettings(settings: Partial<StoreSettings>) {
-  db.settings = {
-    ...db.settings,
-    ...settings,
-    printerSettings: {
-      ...db.settings.printerSettings,
-      ...(settings.printerSettings || {}),
-      defaultOptions: {
-        ...db.settings.printerSettings.defaultOptions,
-        ...(settings.printerSettings?.defaultOptions || {}),
-      },
-    },
-  };
+  db.settings = mergeSettings({ ...db.settings, ...settings });
   notify();
 }
 
@@ -456,7 +461,7 @@ export function importDatabase(file: File): Promise<{ success: boolean; error?: 
           register:    data.register    || { currentBalance: 0, transactions: [] },
           users:       data.users       || [],
           activityLog: data.activityLog || [],
-          settings:    data.settings    || { ...defaultSettings },
+          settings:    mergeSettings(data.settings),
           debtors:     data.debtors     || [],
           lastStockReset: data.lastStockReset || '',
         };
@@ -505,7 +510,7 @@ window.injectDatabase = async (jsonString: string) => {
       register:    data.register    || { currentBalance: 0, transactions: [] },
       users:       data.users       || [],
       activityLog: data.activityLog || [],
-      settings:    data.settings    || { ...defaultSettings },
+      settings:    mergeSettings(data.settings),
       debtors:     data.debtors     || [],
       lastStockReset: data.lastStockReset || '',
     };

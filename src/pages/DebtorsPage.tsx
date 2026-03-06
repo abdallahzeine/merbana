@@ -1,15 +1,20 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
+import { useAuth } from '../hooks/useAuth';
 import { addDebtor, markDebtorPaid, deleteDebtor } from '../services/database';
 import { formatDate } from '../utils/formatters';
+import PasswordConfirmDialog from '../components/PasswordConfirmDialog';
+import { usePasswordGate } from '../hooks/usePasswordGate';
+import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('ar-SY', { minimumFractionDigits: 0 });
 }
 
 export default function DebtorsPage() {
-  const { debtors } = useDatabase();
+  const { debtors, settings } = useDatabase();
+  const { activeUser } = useAuth();
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
@@ -18,6 +23,7 @@ export default function DebtorsPage() {
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid'>('all');
+  const passwordGate = usePasswordGate({ settings, activeUser });
 
   const totalOwed = debtors
     .filter((d) => !d.paidAt)
@@ -37,12 +43,19 @@ export default function DebtorsPage() {
     const parsedAmount = parseFloat(amount);
     if (!trimmedName) { setError('الاسم مطلوب'); return; }
     if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) { setError('أدخل مبلغاً صحيحاً'); return; }
-    addDebtor(trimmedName, parsedAmount, note.trim() || undefined);
-    setName(''); setAmount(''); setNote(''); setError('');
+    passwordGate.runProtected('add_debtor', SENSITIVE_ACTION_LABELS.add_debtor, () => {
+      addDebtor(trimmedName, parsedAmount, note.trim() || undefined);
+      setName('');
+      setAmount('');
+      setNote('');
+      setError('');
+    });
   }
 
   function handleDelete(id: string) {
-    deleteDebtor(id);
+    passwordGate.runProtected('delete_debtor', SENSITIVE_ACTION_LABELS.delete_debtor, () => {
+      deleteDebtor(id);
+    });
     setConfirmDelete(null);
   }
 
@@ -197,7 +210,11 @@ export default function DebtorsPage() {
                       <div className="flex items-center gap-2 justify-end">
                         {!d.paidAt && (
                           <button
-                            onClick={() => markDebtorPaid(d.id)}
+                            onClick={() => {
+                              passwordGate.runProtected('mark_debtor_paid', SENSITIVE_ACTION_LABELS.mark_debtor_paid, () => {
+                                markDebtorPaid(d.id);
+                              });
+                            }}
                             title="تسديد"
                             className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg transition-colors border border-emerald-100"
                           >
@@ -239,6 +256,16 @@ export default function DebtorsPage() {
           </div>
         )}
       </div>
+
+      <PasswordConfirmDialog
+        open={passwordGate.open}
+        actionLabel={passwordGate.actionLabel}
+        password={passwordGate.password}
+        error={passwordGate.error}
+        onPasswordChange={passwordGate.setPassword}
+        onClose={passwordGate.close}
+        onConfirm={passwordGate.confirmPassword}
+      />
     </div>
   );
 }

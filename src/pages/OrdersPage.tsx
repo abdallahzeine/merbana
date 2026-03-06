@@ -1,18 +1,24 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
+import { useAuth } from '../hooks/useAuth';
 import { deleteOrder } from '../services/database';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
 import EmptyState from '../components/EmptyState';
 import ConfirmDialog from '../components/ConfirmDialog';
+import PasswordConfirmDialog from '../components/PasswordConfirmDialog';
+import { usePasswordGate } from '../hooks/usePasswordGate';
+import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
 import type { Order } from '../types/types';
 
 export default function OrdersPage() {
-  const { orders, loading } = useDatabase();
+  const { orders, settings, loading } = useDatabase();
+  const { activeUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get('search') || '');
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [page, setPage] = useState(1);
+  const passwordGate = usePasswordGate({ settings, activeUser });
   const ITEMS_PER_PAGE = 20;
 
   function updateSearch(val: string) {
@@ -47,8 +53,11 @@ export default function OrdersPage() {
 
   function handleDelete() {
     if (deleteTarget) {
-      deleteOrder(deleteTarget.id);
+      const target = deleteTarget;
       setDeleteTarget(null);
+      passwordGate.runProtected('delete_order', SENSITIVE_ACTION_LABELS.delete_order, () => {
+        deleteOrder(target.id);
+      });
     }
   }
 
@@ -207,6 +216,16 @@ export default function OrdersPage() {
         message={`هل أنت متأكد من حذف الطلب #${String(deleteTarget?.orderNumber ?? '').padStart(3, '0')}؟ لا يمكن التراجع عن هذا الإجراء.`}
         confirmLabel="حذف"
         danger
+      />
+
+      <PasswordConfirmDialog
+        open={passwordGate.open}
+        actionLabel={passwordGate.actionLabel}
+        password={passwordGate.password}
+        error={passwordGate.error}
+        onPasswordChange={passwordGate.setPassword}
+        onClose={passwordGate.close}
+        onConfirm={passwordGate.confirmPassword}
       />
     </div>
   );

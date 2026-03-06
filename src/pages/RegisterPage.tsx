@@ -1,19 +1,25 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDatabase } from '../hooks/useDatabase';
+import { useAuth } from '../hooks/useAuth';
 import { depositCash, withdrawCash, closeShift } from '../services/database';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import PasswordConfirmDialog from '../components/PasswordConfirmDialog';
+import { usePasswordGate } from '../hooks/usePasswordGate';
+import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
 
 type ModalType = null | 'deposit' | 'withdraw' | 'close_shift';
 
 export default function RegisterPage() {
-  const { register, orders, loading } = useDatabase();
+  const { register, orders, settings, loading } = useDatabase();
+  const { activeUser } = useAuth();
   const [modal, setModal] = useState<ModalType>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [toast, setToast] = useState('');
+  const passwordGate = usePasswordGate({ settings, activeUser });
 
   function showToast(msg: string) {
     setToast(msg);
@@ -23,24 +29,32 @@ export default function RegisterPage() {
   function handleDeposit() {
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
-    depositCash(val, note.trim() || 'إيداع نقدي');
-    showToast(`تم إضافة ${formatCurrency(val)} للصندوق`);
-    resetModal();
+    passwordGate.runProtected('deposit_cash', SENSITIVE_ACTION_LABELS.deposit_cash, () => {
+      depositCash(val, note.trim() || 'إيداع نقدي');
+      showToast(`تم إضافة ${formatCurrency(val)} للصندوق`);
+      resetModal();
+    });
   }
 
   function handleWithdraw() {
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
-    withdrawCash(val, note.trim() || 'سحب نقدي');
-    showToast(`تم سحب ${formatCurrency(val)}`);
-    resetModal();
+    passwordGate.runProtected('withdraw_cash', SENSITIVE_ACTION_LABELS.withdraw_cash, () => {
+      withdrawCash(val, note.trim() || 'سحب نقدي');
+      showToast(`تم سحب ${formatCurrency(val)}`);
+      resetModal();
+    });
   }
 
   function handleCloseShift() {
     const taken = register.currentBalance;
-    closeShift(taken, note.trim() || undefined);
-    showToast(`تم إغلاق الوردية — ${formatCurrency(taken)} تم تحصيلها`);
-    resetModal();
+    const closeNote = note.trim() || undefined;
+    setModal(null);
+    passwordGate.runProtected('close_shift', SENSITIVE_ACTION_LABELS.close_shift, () => {
+      closeShift(taken, closeNote);
+      showToast(`تم إغلاق الوردية — ${formatCurrency(taken)} تم تحصيلها`);
+      resetModal();
+    });
   }
 
   function resetModal() {
@@ -334,6 +348,16 @@ export default function RegisterPage() {
         message={`سيتم تحصيل ${formatCurrency(register.currentBalance)} من الصندوق وإعادة تعيين الرصيد إلى 0.00 ل.س. هل تريد المتابعة؟`}
         confirmLabel="إغلاق الوردية"
         danger
+      />
+
+      <PasswordConfirmDialog
+        open={passwordGate.open}
+        actionLabel={passwordGate.actionLabel}
+        password={passwordGate.password}
+        error={passwordGate.error}
+        onPasswordChange={passwordGate.setPassword}
+        onClose={passwordGate.close}
+        onConfirm={passwordGate.confirmPassword}
       />
     </div>
   );

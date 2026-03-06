@@ -66,9 +66,27 @@ export interface PrinterSettings {
   kitchenCopies: number;
 }
 
+export type SensitiveActionKey =
+  | 'create_order'
+  | 'delete_order'
+  | 'deposit_cash'
+  | 'withdraw_cash'
+  | 'close_shift'
+  | 'add_debtor'
+  | 'mark_debtor_paid'
+  | 'delete_debtor'
+  | 'import_database';
+
+export type PasswordRequirementMap = Record<SensitiveActionKey, boolean>;
+
+export interface SecuritySettings {
+  passwordRequiredFor: PasswordRequirementMap;
+}
+
 export interface StoreSettings {
   companyName: string;
   printerSettings: PrinterSettings;
+  security: SecuritySettings;
 }
 
 export interface Debtor {

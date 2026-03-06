@@ -5,7 +5,8 @@ import { addUser, deleteUser, updateUser, updateSettings } from '../services/dat
 import { formatDateTime } from '../utils/formatters';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import type { StoreUser } from '../types/types';
+import { SENSITIVE_ACTIONS, SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
+import type { PasswordRequirementMap, StoreUser } from '../types/types';
 
 const ADMIN_NAME = 'admin';
 const ADMIN_PASS = '0780071840';
@@ -36,15 +37,30 @@ export default function AdminPage() {
 
   // Settings state — null means "not yet edited by user"; fall back to persisted value
   const [companyName, setCompanyName] = useState<string | null>(null);
+  const [passwordPolicy, setPasswordPolicy] = useState<PasswordRequirementMap | null>(null);
   const displayName = companyName ?? (settings?.companyName ?? '');
+  const displayPolicy = passwordPolicy ?? settings.security.passwordRequiredFor;
   const [saveMessage, setSaveMessage] = useState('');
 
   function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!displayName.trim()) return;
-    updateSettings({ companyName: displayName.trim() });
+    updateSettings({
+      companyName: displayName.trim(),
+      security: { passwordRequiredFor: displayPolicy },
+    });
     setSaveMessage('تم حفظ الإعدادات بنجاح');
     setTimeout(() => setSaveMessage(''), 3000);
+  }
+
+  function togglePasswordRule(action: keyof PasswordRequirementMap) {
+    setPasswordPolicy((prev) => {
+      const current = prev ?? settings.security.passwordRequiredFor;
+      return {
+        ...current,
+        [action]: !current[action],
+      };
+    });
   }
 
   function handleAdminLogin(e: React.FormEvent) {
@@ -256,6 +272,27 @@ export default function AdminPage() {
                     className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent"
                     placeholder="اسم المتجر"
                   />
+                </div>
+
+                <div className="pt-4 border-t border-stone-100">
+                  <h3 className="text-sm font-semibold text-stone-800 mb-2">تأكيد كلمة المرور للعمليات الحساسة</h3>
+                  <p className="text-xs text-stone-400 mb-4">يمكنك التحكم بشكل حر بأي عملية تتطلب كلمة مرور المستخدم قبل التنفيذ.</p>
+                  <div className="space-y-2">
+                    {SENSITIVE_ACTIONS.map((actionKey) => (
+                      <label
+                        key={actionKey}
+                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-stone-200 bg-stone-50"
+                      >
+                        <span className="text-sm text-stone-700">{SENSITIVE_ACTION_LABELS[actionKey]}</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(displayPolicy[actionKey])}
+                          onChange={() => togglePasswordRule(actionKey)}
+                          className="w-4 h-4 accent-violet-600"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 
                 <div className="pt-4 border-t border-stone-100 flex items-center justify-between">

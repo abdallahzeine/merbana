@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { subscribe, loadDatabase, getProducts, getCategories, getOrders, getRegister, getUsers, getActivityLog, getSettings, getDebtors } from '../services/database';
 import type { Product, Category, Order, RegisterState, StoreUser, ActivityLog, StoreSettings, Debtor } from '../types/types';
+import { DEFAULT_PASSWORD_REQUIREMENTS } from '../utils/passwordPolicy';
 
 const defaultSettings: StoreSettings = {
   companyName: '',
@@ -12,6 +13,9 @@ const defaultSettings: StoreSettings = {
     autoPrint: false,
     customerCopies: 1,
     kitchenCopies: 1,
+  },
+  security: {
+    passwordRequiredFor: { ...DEFAULT_PASSWORD_REQUIREMENTS },
   },
 };
 

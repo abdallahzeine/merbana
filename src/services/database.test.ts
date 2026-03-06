@@ -6,6 +6,7 @@
  * Blob) are stubbed so the tests run in plain Node without a browser.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DEFAULT_PASSWORD_REQUIREMENTS } from '../utils/passwordPolicy';
 
 /* ------------------------------------------------------------------ */
 /*  Browser API stubs                                                  */
@@ -286,6 +287,31 @@ describe('Settings', () => {
     s.companyName = 'mutated';
     expect(db.getSettings().companyName).toBe('');
   });
+
+  it('starts with default password requirement policy', () => {
+    expect(db.getSettings().security.passwordRequiredFor).toEqual(DEFAULT_PASSWORD_REQUIREMENTS);
+  });
+
+  it('updateSettings merges partial password policy without dropping other actions', () => {
+    db.updateSettings({
+      security: {
+        passwordRequiredFor: {
+          withdraw_cash: false,
+        },
+      },
+    });
+
+    const settings = db.getSettings();
+    expect(settings.security.passwordRequiredFor.withdraw_cash).toBe(false);
+    expect(settings.security.passwordRequiredFor.deposit_cash).toBe(true);
+    expect(settings.security.passwordRequiredFor.delete_order).toBe(true);
+  });
+
+  it('getSettings returns nested security copy', () => {
+    const s = db.getSettings();
+    s.security.passwordRequiredFor.create_order = false;
+    expect(db.getSettings().security.passwordRequiredFor.create_order).toBe(true);
+  });
 });
 
 /* ================================================================== */
@@ -556,29 +582,19 @@ describe('subscribe / notify', () => {
     expect(listener).toHaveBeenCalledTimes(1); // no extra call
   });
 
-  it('notify persists via sendBeacon after debounce', () => {
-    vi.useFakeTimers();
+  it('notify persists via sendBeacon immediately on mutation', () => {
     sendBeaconMock.mockClear();
     db.addUser('Persist Test');
-    // sendBeacon is debounced — hasn't fired yet
-    expect(sendBeaconMock).not.toHaveBeenCalled();
-    // Advance past the debounce window (100 ms)
-    vi.advanceTimersByTime(150);
     expect(sendBeaconMock).toHaveBeenCalledTimes(1);
     expect(sendBeaconMock).toHaveBeenCalledWith('/api/save-db', expect.anything());
-    vi.useRealTimers();
   });
 
-  it('debounce batches rapid mutations into one save', () => {
-    vi.useFakeTimers();
+  it('persists every rapid mutation independently', () => {
     sendBeaconMock.mockClear();
     db.addUser('A');
     db.addUser('B');
     db.addUser('C');
-    vi.advanceTimersByTime(150);
-    // Only one save despite three mutations
-    expect(sendBeaconMock).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
+    expect(sendBeaconMock).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -631,6 +647,7 @@ describe('window.injectDatabase', () => {
     expect(result.success).toBe(true);
     expect(db.getProducts()).toHaveLength(1);
     expect(db.getProducts()[0].name).toBe('Injected');
+    expect(db.getSettings().security.passwordRequiredFor.withdraw_cash).toBe(true);
   });
 
   it('rejects invalid schema', async () => {

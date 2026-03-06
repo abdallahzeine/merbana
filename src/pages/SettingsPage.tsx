@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDatabase } from '../hooks/useDatabase';
+import { useAuth } from '../hooks/useAuth';
 import { exportDatabase, importDatabase, updateSettings } from '../services/database';
+import PasswordConfirmDialog from '../components/PasswordConfirmDialog';
+import { usePasswordGate } from '../hooks/usePasswordGate';
+import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
 import type { PrintBehavior, PrinterSettings } from '../types/types';
 
 const defaultPrinterSettings: PrinterSettings = {
@@ -37,6 +41,7 @@ type CUPSOption = {
 
 export default function SettingsPage() {
   const { settings } = useDatabase();
+  const { activeUser } = useAuth();
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const [savingPrinter, setSavingPrinter] = useState(false);
@@ -48,6 +53,7 @@ export default function SettingsPage() {
   const [printerError, setPrinterError] = useState('');
   const [printerForm, setPrinterForm] = useState<PrinterSettings>(defaultPrinterSettings);
   const fileRef = useRef<HTMLInputElement>(null);
+  const passwordGate = usePasswordGate({ settings, activeUser });
 
   useEffect(() => {
     setPrinterForm(settings.printerSettings || defaultPrinterSettings);
@@ -131,21 +137,21 @@ export default function SettingsPage() {
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    passwordGate.runProtected('import_database', SENSITIVE_ACTION_LABELS.import_database, async () => {
+      setImporting(true);
+      setMessage(null);
 
-    setImporting(true);
-    setMessage(null);
+      const result = await importDatabase(file);
 
-    const result = await importDatabase(file);
+      if (result.success) {
+        setMessage({ type: 'success', text: 'تم استيراد قاعدة البيانات بنجاح!' });
+      } else {
+        setMessage({ type: 'error', text: result.error || 'فشل الاستيراد.' });
+      }
 
-    if (result.success) {
-      setMessage({ type: 'success', text: 'تم استيراد قاعدة البيانات بنجاح!' });
-    } else {
-      setMessage({ type: 'error', text: result.error || 'فشل الاستيراد.' });
-    }
-
-    setImporting(false);
-    // Reset file input
-    if (fileRef.current) fileRef.current.value = '';
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    });
   }
 
   function handleExport() {
@@ -430,6 +436,16 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <PasswordConfirmDialog
+        open={passwordGate.open}
+        actionLabel={passwordGate.actionLabel}
+        password={passwordGate.password}
+        error={passwordGate.error}
+        onPasswordChange={passwordGate.setPassword}
+        onClose={passwordGate.close}
+        onConfirm={passwordGate.confirmPassword}
+      />
     </div>
   );
 }

@@ -433,6 +433,55 @@ describe('Reload consistency after app close & reopen', () => {
     expect(db2.getSettings().companyName).toBe('مربانة');
   });
 
+  it('security password policy survives a close & reopen', async () => {
+    const db1 = await freshDb();
+    db1.updateSettings({
+      security: {
+        passwordRequiredFor: {
+          withdraw_cash: false,
+          close_shift: false,
+        },
+      },
+    });
+    const snapshot = lastSavedJSON;
+
+    const db2 = await reopen(snapshot);
+    const settings = db2.getSettings();
+    expect(settings.security.passwordRequiredFor.withdraw_cash).toBe(false);
+    expect(settings.security.passwordRequiredFor.close_shift).toBe(false);
+    expect(settings.security.passwordRequiredFor.deposit_cash).toBe(true);
+  });
+
+  it('reopen fills default security policy for legacy settings schema', async () => {
+    const legacySnapshot = JSON.stringify({
+      products: [],
+      categories: [],
+      orders: [],
+      register: { currentBalance: 0, transactions: [] },
+      users: [],
+      activityLog: [],
+      settings: {
+        companyName: 'Legacy',
+        printerSettings: {
+          defaultPrinter: '',
+          kitchenPrinter: '',
+          defaultOptions: {},
+          printBehavior: 'customer_only',
+          autoPrint: false,
+          customerCopies: 1,
+          kitchenCopies: 1,
+        },
+      },
+      debtors: [],
+      lastStockReset: '',
+    });
+
+    const db2 = await reopen(legacySnapshot);
+    const policy = db2.getSettings().security.passwordRequiredFor;
+    expect(policy.create_order).toBe(true);
+    expect(policy.import_database).toBe(true);
+  });
+
   it('debtors survive a close & reopen', async () => {
     const db1 = await freshDb();
     db1.addDebtor('Tarek', 120, 'monthly tab');

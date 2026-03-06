@@ -6,11 +6,14 @@ import { addOrder } from '../services/database';
 import { formatCurrency } from '../utils/formatters';
 import EmptyState from '../components/EmptyState';
 import Modal from '../components/Modal';
+import PasswordConfirmDialog from '../components/PasswordConfirmDialog';
+import { usePasswordGate } from '../hooks/usePasswordGate';
+import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
 import { PaymentMethodToggle, OrderTypeToggle, OrderNoteInput } from '../components/OrderControls';
 import type { OrderItem, PaymentMethod, Product } from '../types/types';
 
 export default function NewOrderPage() {
-  const { products, categories, loading } = useDatabase();
+  const { products, categories, settings, loading } = useDatabase();
   const { activeUser } = useAuth();
   const navigate = useNavigate();
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -25,6 +28,7 @@ export default function NewOrderPage() {
   // Size selection state
   const [sizeModalOpen, setSizeModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const passwordGate = usePasswordGate({ settings, activeUser });
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
@@ -108,14 +112,16 @@ export default function NewOrderPage() {
 
   function placeOrder() {
     if (cart.length === 0) return;
-    const order = addOrder(cart, paymentMethod, orderType, orderNote.trim() || undefined, activeUser?.id, activeUser?.name);
-    setOrderNote('');
-    setCart([]);
-    setCartOpen(false);
-    setSuccessMsg('تم تأكيد الطلب بنجاح!');
-    setTimeout(() => {
-      navigate(`/receipt/${order.id}`);
-    }, 800);
+    passwordGate.runProtected('create_order', SENSITIVE_ACTION_LABELS.create_order, () => {
+      const order = addOrder(cart, paymentMethod, orderType, orderNote.trim() || undefined, activeUser?.id, activeUser?.name);
+      setOrderNote('');
+      setCart([]);
+      setCartOpen(false);
+      setSuccessMsg('تم تأكيد الطلب بنجاح!');
+      setTimeout(() => {
+        navigate(`/receipt/${order.id}`);
+      }, 800);
+    });
   }
 
   if (loading) {
@@ -367,6 +373,16 @@ export default function NewOrderPage() {
           ))}
         </div>
       </Modal>
+
+      <PasswordConfirmDialog
+        open={passwordGate.open}
+        actionLabel={passwordGate.actionLabel}
+        password={passwordGate.password}
+        error={passwordGate.error}
+        onPasswordChange={passwordGate.setPassword}
+        onClose={passwordGate.close}
+        onConfirm={passwordGate.confirmPassword}
+      />
     </div>
   );
 }
