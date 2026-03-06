@@ -2,6 +2,12 @@
 import type { Database, Product, Category, Order, CashTransaction, RegisterState, StoreUser, ActivityLog, StoreSettings, Debtor } from '../types/types';
 import { DEFAULT_PASSWORD_REQUIREMENTS } from '../utils/passwordPolicy';
 
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object
+    ? DeepPartial<T[K]>
+    : T[K];
+};
+
 type Listener = () => void;
 
 const defaultSettings: StoreSettings = {
@@ -20,17 +26,22 @@ const defaultSettings: StoreSettings = {
   },
 };
 
-function mergeSettings(partial?: Partial<StoreSettings>): StoreSettings {
+function mergeSettings(partial?: DeepPartial<StoreSettings>): StoreSettings {
   return {
     ...defaultSettings,
     ...(partial || {}),
     printerSettings: {
       ...defaultSettings.printerSettings,
       ...(partial?.printerSettings || {}),
-      defaultOptions: {
-        ...defaultSettings.printerSettings.defaultOptions,
-        ...(partial?.printerSettings?.defaultOptions || {}),
-      },
+      defaultOptions: (() => {
+        const merged = {
+          ...defaultSettings.printerSettings.defaultOptions,
+          ...(partial?.printerSettings?.defaultOptions || {}),
+        };
+        return Object.fromEntries(
+          Object.entries(merged).filter(([, value]) => typeof value === 'string'),
+        ) as Record<string, string>;
+      })(),
     },
     security: {
       ...defaultSettings.security,
@@ -273,7 +284,7 @@ export function getSettings(): StoreSettings {
   return mergeSettings(db.settings);
 }
 
-export function updateSettings(settings: Partial<StoreSettings>) {
+export function updateSettings(settings: DeepPartial<StoreSettings>) {
   db.settings = mergeSettings({ ...db.settings, ...settings });
   notify();
 }
