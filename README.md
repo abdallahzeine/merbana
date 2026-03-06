@@ -1,3 +1,31 @@
+how# Merbana
+
+## Linux App Updater
+
+Use this script to update from GitHub, rebuild, deploy to `~/Desktop/POS`, keep customer data, keep only the latest 3 backups, and restart the app:
+
+```bash
+bash Deployment/update_merbana.sh
+```
+
+What it does:
+- Backs up current `~/Desktop/POS/dist` and `~/Desktop/POS/data/db.json`
+- Pulls latest `origin/main` from local repo at `~/Desktop/merbana`
+- Runs `npm ci` and `npm run build`
+- Deploys new `dist` to `~/Desktop/POS/dist`
+- Restores your existing `db.json` (customer data)
+- Restarts the app via `~/Desktop/POS/Merbana`
+
+Optional overrides:
+
+```bash
+REPO_DIR=~/Desktop/merbana BRANCH=main POS_DIR=~/Desktop/POS RETENTION=3 bash Deployment/update_merbana.sh
+```
+
+Notes:
+- The updater force-syncs the repo to remote (`git reset --hard origin/main`).
+- Keep your stable code in GitHub before running the updater.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
