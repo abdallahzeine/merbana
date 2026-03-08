@@ -9,10 +9,8 @@ import http.server
 import json
 import logging
 import os
-import shutil
 import socket
 import socketserver
-import subprocess
 import sys
 import threading
 import webbrowser
@@ -27,13 +25,10 @@ WINDOW_HEIGHT = 820
 
 # Set by run_with_webview / run_with_browser before the server starts
 _data_path: str = ""
-_log_path: str = ""
 
 
 def _setup_logging(log_path: str) -> None:
     """Configure logging to file + stderr."""
-    global _log_path
-    _log_path = log_path
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     logging.basicConfig(
         level=logging.DEBUG,
@@ -44,26 +39,6 @@ def _setup_logging(log_path: str) -> None:
         ],
     )
     logging.info("Merbana launcher started. Log: %s", log_path)
-
-
-def _open_log_terminal() -> None:
-    """Open a terminal window that tails the log file (Linux only)."""
-    if not _log_path:
-        return
-    candidates = [
-        ("xterm",          ["xterm", "-title", "Merbana — Log", "-e", f"tail -f '{_log_path}'; read"]),
-        ("gnome-terminal", ["gnome-terminal", "--title=Merbana — Log", "--", "bash", "-c", f"tail -f '{_log_path}'; read"]),
-        ("konsole",        ["konsole", "--title", "Merbana — Log", "-e", "bash", "-c", f"tail -f '{_log_path}'; read"]),
-        ("xfce4-terminal", ["xfce4-terminal", "--title=Merbana — Log", "-e", f"tail -f '{_log_path}'; read"]),
-        ("lxterminal",     ["lxterminal", "--title=Merbana — Log", "-e", f"tail -f '{_log_path}'; read"]),
-    ]
-    for bin_name, cmd in candidates:
-        if shutil.which(bin_name):
-            try:
-                subprocess.Popen(cmd)
-            except Exception as exc:
-                logging.warning("Could not open log terminal (%s): %s", bin_name, exc)
-            return
 
 
 def _json_response(handler: http.server.BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -250,7 +225,6 @@ def main() -> None:
     # Set up log file beside the data folder.
     log_dir = os.path.dirname(get_data_path(dist_path))
     _setup_logging(os.path.join(log_dir, "merbana.log"))
-    _open_log_terminal()
 
     if not os.path.isfile(os.path.join(dist_path, "index.html")):
         logging.error("dist/ folder not found. Expected: %s", dist_path)
