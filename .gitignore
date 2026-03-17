@@ -56,3 +56,6 @@ venv/
 *.spec
 build/
 
+# Windows Build Output
+dist_windows/
+Merbana.exe
