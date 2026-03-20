@@ -173,6 +173,7 @@ copy_runtime_sources() {
   [[ -d "${DEPLOY_BACKEND_SRC_DIR}" ]] || fail "Alembic source missing: ${DEPLOY_BACKEND_SRC_DIR}"
 
   info "Copying backend runtime into ${POS_APP_DIR}"
+  mkdir -p "${BACKEND_DST_DIR}" "${POS_APP_DIR}/Deployment" "${DEPLOY_BACKEND_DST_DIR}"
 
   if command -v rsync >/dev/null 2>&1; then
     rsync -a --delete "${BACKEND_SRC_DIR}/" "${BACKEND_DST_DIR}/"
