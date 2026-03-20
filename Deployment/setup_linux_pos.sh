@@ -114,8 +114,6 @@ install_os_dependencies() {
     python3-gi
     python3-gi-cairo
     gir1.2-gtk-3.0
-    nodejs
-    npm
   )
 
   local webkit_package="${WEBKIT_GIR_PACKAGE}"
@@ -123,6 +121,15 @@ install_os_dependencies() {
 
   info "Installing base OS packages via apt"
   sudo apt-get install -y "${base_packages[@]}"
+
+  # Install npm separately because apt resolves nodejs/npm dependencies better this way
+  # on systems where a pre-existing nodejs package may conflict.
+  info "Installing npm via apt"
+  sudo apt-get install -y npm
+
+  if ! command -v node >/dev/null 2>&1 && ! command -v nodejs >/dev/null 2>&1; then
+    fail "Node.js was not installed with npm. Please verify apt repositories and package state."
+  fi
 
   info "Installing WebKit GTK package (${webkit_package})"
   if ! sudo apt-get install -y "${webkit_package}"; then
