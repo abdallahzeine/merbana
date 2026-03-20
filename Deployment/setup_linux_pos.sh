@@ -242,13 +242,19 @@ write_runtime_launcher() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-VENV_PY="${VENV_DIR}/bin/python"
-APP_DIR="${POS_APP_DIR}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+POS_DIR="${SCRIPT_DIR}"
+VENV_DIR="${POS_DIR}/.venv"
+APP_DIR="${POS_DIR}/app"
+DATA_DIR="${POS_DIR}/data"
+DIST_DIR="${POS_DIR}/dist"
 LOG_FILE="${DATA_DIR}/launcher.log"
 HOST="127.0.0.1"
 PORT="${MERBANA_PORT:-8741}"
 
-MERBANA_DIST_PATH="${DIST_DST}" \
+VENV_PY="${VENV_DIR}/bin/python"
+
+MERBANA_DIST_PATH="${DIST_DIR}" \
 MERBANA_DATA_PATH="${DATA_DIR}" \
 MERBANA_DB_URL="sqlite:///${DATA_DIR}/merbana.db" \
 nohup "${VENV_PY}" -m uvicorn backend.app:app --host "${HOST}" --port "${PORT}" --app-dir "${APP_DIR}" > "${LOG_FILE}" 2>&1 &
@@ -259,8 +265,8 @@ timeout=30
 until curl -s "http://${HOST}:${PORT}/api/health" | grep -q '"status":'; do
   timeout=$((timeout-1))
   if [ "$timeout" -le 0 ]; then
-  echo "Backend failed to start. Check launcher.log in POS/data for details."
-  exit 1
+    echo "Backend failed to start. Check launcher.log in POS/data for details."
+    exit 1
   fi
   sleep 1
 done
