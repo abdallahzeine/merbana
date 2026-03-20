@@ -205,14 +205,18 @@ copy_runtime_sources() {
 
 setup_venv_and_python_deps() {
   info "Creating Python ${PYTHON_VERSION} virtual environment at ${VENV_DIR}"
-  "${UV_BIN}" venv --python "${PYTHON_VERSION}" "${VENV_DIR}"
+  "${UV_BIN}" venv --python "${PYTHON_VERSION}" --seed "${VENV_DIR}"
 
   [[ -x "${VENV_DIR}/bin/python" ]] || fail "Python executable missing in venv: ${VENV_DIR}/bin/python"
+  if ! "${VENV_DIR}/bin/python" -m pip --version >/dev/null 2>&1; then
+    info "pip not present in venv, bootstrapping with ensurepip"
+    "${VENV_DIR}/bin/python" -m ensurepip --upgrade
+  fi
 
   info "Installing Python dependencies in venv"
-  "${VENV_DIR}/bin/python" -m pip install --upgrade pip setuptools wheel
-  "${VENV_DIR}/bin/pip" install -r "${REPO_DIR}/requirements.txt"
-  "${VENV_DIR}/bin/pip" install "${PYWEBVIEW_SPEC}" "uvicorn[standard]" "pydantic-settings"
+  "${UV_BIN}" pip install --python "${VENV_DIR}/bin/python" --upgrade pip setuptools wheel
+  "${UV_BIN}" pip install --python "${VENV_DIR}/bin/python" -r "${REPO_DIR}/requirements.txt"
+  "${UV_BIN}" pip install --python "${VENV_DIR}/bin/python" "${PYWEBVIEW_SPEC}" "uvicorn[standard]" "pydantic-settings"
 
   ok "Python environment ready"
 }
