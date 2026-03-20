@@ -291,7 +291,7 @@ if [[ ! -f "\${LAUNCHER_PY}" ]]; then
   exit 1
 fi
 
-exec "\${VENV_PY}" "\${LAUNCHER_PY}"
+exec bash "\${LAUNCHER_PY}"
 EOF
 
   chmod +x "${WRAPPER_PATH}"
