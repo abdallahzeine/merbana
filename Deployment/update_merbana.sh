@@ -21,6 +21,11 @@ ALEMBIC_INI="${REPO_DIR}/Deployment/backend/alembic.ini"
 WRAPPER="${POS_DIR}/Merbana"
 BACKUPS_DIR="${POS_DIR}/backups"
 RETENTION="${RETENTION:-3}"
+FORCE_JSON_REIMPORT="${FORCE_JSON_REIMPORT:-0}"
+HEALTH_HOST="${HEALTH_HOST:-127.0.0.1}"
+HEALTH_PORT="${HEALTH_PORT:-8741}"
+HEALTH_PATH="${HEALTH_PATH:-/api/health}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-35}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -37,37 +42,88 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
 }
 
-print_migration_operator_step() {
-  local backup_path="$1"
-  info "Operator migration step required before startup if schema changed:"
-  echo "  export MERBANA_DB_URL=sqlite:///${SQLITE_FILE}"
-  echo "  python3 -m alembic -c ${ALEMBIC_INI} upgrade head"
-  info "Backup gate: ${backup_path} contains pre-upgrade SQLite files for restore."
+run_alembic_upgrade() {
+  [[ -f "${ALEMBIC_INI}" ]] || fail "Alembic config not found: ${ALEMBIC_INI}"
+
+  local db_url
+  db_url="sqlite:///${SQLITE_FILE}"
+
+  info "Running Alembic migrations to head"
+  MERBANA_DATA_PATH="${DATA_DIR}" \
+  MERBANA_DB_URL="${db_url}" \
+    python3 -m alembic -c "${ALEMBIC_INI}" upgrade head
+  ok "Alembic migrations completed."
+}
+
+wait_for_health() {
+  local health_url
+  health_url="http://${HEALTH_HOST}:${HEALTH_PORT}${HEALTH_PATH}"
+
+  info "Waiting for backend health at ${health_url}"
+  HEALTH_URL="${health_url}" HEALTH_TIMEOUT="${HEALTH_TIMEOUT}" python3 - <<'PY'
+import os
+import sys
+import time
+import urllib.request
+
+url = os.environ["HEALTH_URL"]
+timeout = float(os.environ.get("HEALTH_TIMEOUT", "35"))
+deadline = time.time() + timeout
+
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(url, timeout=2.0) as response:
+            if response.status == 200:
+                sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(0.5)
+
+sys.exit(1)
+PY
 }
 
 migrate_legacy_json_if_needed() {
   local migration_script="${REPO_DIR}/Deployment/migrate_json_to_sqlite.py"
   local artifacts_dir="${POS_DIR}/artifacts"
+  local force_mode=false
+
+  if [[ "${FORCE_JSON_REIMPORT}" == "1" || "${FORCE_JSON_REIMPORT}" == "true" || "${FORCE_JSON_REIMPORT}" == "TRUE" ]]; then
+    force_mode=true
+    warn "FORCE_JSON_REIMPORT enabled: legacy JSON import may overwrite existing SQLite data."
+  fi
 
   if [[ ! -f "${DATA_FILE}" ]]; then
     info "No legacy db.json found. Skipping migration."
     return
   fi
 
-  if [[ -f "${SQLITE_FILE}" ]]; then
+  if [[ -f "${SQLITE_FILE}" && "${force_mode}" != true ]]; then
     info "SQLite database already exists. Skipping legacy JSON migration."
     return
   fi
 
   [[ -f "${migration_script}" ]] || fail "Migration script not found: ${migration_script}"
 
-  info "Migrating legacy db.json into SQLite"
+  if [[ "${force_mode}" == true && -f "${SQLITE_FILE}" ]]; then
+    info "Force mode active: rebuilding SQLite from legacy db.json"
+  else
+    info "Migrating legacy db.json into SQLite"
+  fi
   mkdir -p "${DATA_DIR}" "${artifacts_dir}"
 
-  MERBANA_DATA_PATH="${DATA_DIR}" \
-    python3 "${migration_script}" \
-      --source "${DATA_FILE}" \
-      --artifacts-dir "${artifacts_dir}"
+  if [[ "${force_mode}" == true ]]; then
+    MERBANA_DATA_PATH="${DATA_DIR}" \
+      python3 "${migration_script}" \
+        --source "${DATA_FILE}" \
+        --artifacts-dir "${artifacts_dir}" \
+        --overwrite
+  else
+    MERBANA_DATA_PATH="${DATA_DIR}" \
+      python3 "${migration_script}" \
+        --source "${DATA_FILE}" \
+        --artifacts-dir "${artifacts_dir}"
+  fi
 
   [[ -f "${SQLITE_FILE}" ]] || fail "Migration completed but SQLite file missing: ${SQLITE_FILE}"
   ok "Legacy JSON migration to SQLite completed."
@@ -216,12 +272,15 @@ main() {
     fi
   fi
 
+  stop_app
+
   migrate_legacy_json_if_needed
-  print_migration_operator_step "${backup_path}"
+  run_alembic_upgrade
 
   info "Restarting app"
-  stop_app
   start_app
+  wait_for_health || fail "Backend health check failed after restart. Check /tmp/merbana-update-launch.log"
+  ok "Backend health check passed."
 
   trap - ERR
   ok "Update complete. Running latest ${BRANCH} with preserved data."
