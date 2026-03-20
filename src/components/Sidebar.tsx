@@ -2,17 +2,14 @@ import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../queries/settings';
-import { useProducts } from '../queries/products';
 import { useDebtors } from '../queries/debtors';
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false);
   const { activeUser, logout } = useAuth();
   const settingsQuery = useSettings();
-  const productsQuery = useProducts();
   const debtorsQuery = useDebtors();
 
-  const products = productsQuery.data ?? [];
   const debtors = debtorsQuery.data ?? [];
   const settings = settingsQuery.data;
 
