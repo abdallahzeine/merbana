@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
+import { useProducts } from '../queries/products';
+import { useCategories } from '../queries/categories';
+import { useSettings } from '../queries/settings';
+import { useCreateOrder } from '../queries/orders';
 import { useAuth } from '../hooks/useAuth';
-import { addOrder } from '../services/database';
 import { formatCurrency } from '../utils/formatters';
 import EmptyState from '../components/EmptyState';
 import Modal from '../components/Modal';
@@ -12,11 +14,22 @@ import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
 import { PaymentMethodToggle, OrderTypeToggle, OrderNoteInput } from '../components/OrderControls';
 import type { OrderItem, PaymentMethod, Product } from '../types/types';
 
+type CartItem = Omit<OrderItem, 'productId'> & { productId: string };
+
 export default function NewOrderPage() {
-  const { products, categories, settings, loading } = useDatabase();
+  const { data: rawProducts = [], isPending: productsLoading } = useProducts();
+  const { data: categories = [], isPending: categoriesLoading } = useCategories();
+  const { data: settings } = useSettings();
+
+  const products = rawProducts.map(p => ({
+    ...p,
+    categoryId: p.categoryId ?? undefined,
+  }));
   const { activeUser } = useAuth();
   const navigate = useNavigate();
-  const [cart, setCart] = useState<OrderItem[]>([]);
+  const createOrder = useCreateOrder();
+
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [successMsg, setSuccessMsg] = useState('');
@@ -25,10 +38,11 @@ export default function NewOrderPage() {
   const [orderType, setOrderType] = useState<'dine_in' | 'takeaway'>('dine_in');
   const [orderNote, setOrderNote] = useState('');
 
-  // Size selection state
   const [sizeModalOpen, setSizeModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const passwordGate = usePasswordGate({ settings, activeUser });
+  const passwordGate = usePasswordGate({ settings: settings!, activeUser });
+
+  const loading = productsLoading || categoriesLoading;
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
@@ -50,7 +64,6 @@ export default function NewOrderPage() {
 
   function addToCart(productId: string, name: string, price: number, size?: string) {
     setCart((prev) => {
-      // Find item with same product ID AND same size (if applicable)
       const existing = prev.find((i) => i.productId === productId && i.size === size);
       
       if (existing) {
@@ -87,15 +100,13 @@ export default function NewOrderPage() {
   function handleRemoveOne(e: React.MouseEvent, productId: string) {
     e.preventDefault();
     setCart((prev) => {
-      // Strategy: Remove from the last item in the cart array that matches this product ID.
       const index = prev.map(item => item.productId).lastIndexOf(productId);
       
-      if (index === -1) return prev; // Not found
+      if (index === -1) return prev;
       
       const item = prev[index];
       
       if (item.quantity > 1) {
-        // Decrement quantity
         const newCart = [...prev];
         newCart[index] = { 
           ...item, 
@@ -104,7 +115,6 @@ export default function NewOrderPage() {
         };
         return newCart;
       } else {
-        // Remove item entirely
         return prev.filter((_, i) => i !== index);
       }
     });
@@ -113,14 +123,20 @@ export default function NewOrderPage() {
   function placeOrder() {
     if (cart.length === 0) return;
     passwordGate.runProtected('create_order', SENSITIVE_ACTION_LABELS.create_order, () => {
-      const order = addOrder(cart, paymentMethod, orderType, orderNote.trim() || undefined, activeUser?.id, activeUser?.name);
-      setOrderNote('');
-      setCart([]);
-      setCartOpen(false);
-      setSuccessMsg('تم تأكيد الطلب بنجاح!');
-      setTimeout(() => {
-        navigate(`/receipt/${order.id}`);
-      }, 800);
+      createOrder.mutate(
+        { items: cart, paymentMethod, orderType, note: orderNote.trim() || undefined, userId: activeUser?.id, userName: activeUser?.name },
+        {
+          onSuccess: (order) => {
+            setOrderNote('');
+            setCart([]);
+            setCartOpen(false);
+            setSuccessMsg('تم تأكيد الطلب بنجاح!');
+            setTimeout(() => {
+              navigate(`/receipt/${order.id}`);
+            }, 800);
+          }
+        }
+      );
     });
   }
 
@@ -203,33 +219,17 @@ export default function NewOrderPage() {
                 return (
                   <button
                     key={product.id}
-                    onClick={() => {
-                      if (product.trackStock && (product.stock || 0) <= 0) return;
-                      handleProductClick(product);
-                    }}
+                    onClick={() => handleProductClick(product)}
                     onContextMenu={(e) => handleRemoveOne(e, product.id)}
                     className={`relative p-3 sm:p-4 rounded-2xl border-2 text-right transition-all duration-200 hover:shadow-md active:scale-[0.97] ${
-                      product.trackStock && (product.stock || 0) <= 0
-                        ? 'border-red-200 bg-red-50/50 opacity-60 cursor-not-allowed'
-                        : inCartCount > 0
-                          ? 'border-violet-400 bg-violet-50 shadow-sm'
-                          : 'border-gray-100 bg-white hover:border-violet-200'
+                      inCartCount > 0
+                        ? 'border-violet-400 bg-violet-50 shadow-sm'
+                        : 'border-gray-100 bg-white hover:border-violet-200'
                     }`}
                   >
                     {inCartCount > 0 && (
                       <span className="absolute -top-2 -left-2 w-6 h-6 bg-violet-600 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md">
                         {inCartCount}
-                      </span>
-                    )}
-                    {product.trackStock && (
-                      <span className={`absolute -top-2 -right-2 text-[10px] px-1.5 py-0.5 rounded-full font-bold shadow-sm ${
-                        (product.stock || 0) <= 0
-                          ? 'bg-red-500 text-white'
-                          : (product.stock || 0) <= 5
-                            ? 'bg-amber-400 text-amber-900'
-                            : 'bg-emerald-400 text-emerald-900'
-                      }`}>
-                        {product.stock || 0}
                       </span>
                     )}
                     <p className="font-semibold text-gray-900 text-sm mb-1 truncate">{product.name}</p>
@@ -282,7 +282,11 @@ export default function NewOrderPage() {
                     />
                   ))}
                 </div>
-                <CartFooter total={total} onPlaceOrder={placeOrder} />
+                <CartFooter 
+                  total={total} 
+                  onPlaceOrder={placeOrder} 
+                  isPlacingOrder={createOrder.isPending}
+                />
               </div>
             )}
           </div>
@@ -346,7 +350,11 @@ export default function NewOrderPage() {
                 />
               ))}
             </div>
-            <CartFooter total={total} onPlaceOrder={placeOrder} />
+            <CartFooter 
+              total={total} 
+              onPlaceOrder={placeOrder} 
+              isPlacingOrder={createOrder.isPending}
+            />
           </div>
         </div>
       )}
@@ -390,7 +398,7 @@ export default function NewOrderPage() {
 /* ── Shared sub-components ────────────────────────────── */
 
 function CartItem({ item, updateQuantity, removeItem }: {
-  item: OrderItem;
+  item: CartItem;
   updateQuantity: (id: string, qty: number, size?: string) => void;
   removeItem: (id: string, size?: string) => void;
 }) {
@@ -431,7 +439,7 @@ function CartItem({ item, updateQuantity, removeItem }: {
   );
 }
 
-function CartFooter({ total, onPlaceOrder }: { total: number; onPlaceOrder: () => void }) {
+function CartFooter({ total, onPlaceOrder, isPlacingOrder }: { total: number; onPlaceOrder: () => void; isPlacingOrder?: boolean }) {
   return (
     <div className="px-4 sm:px-5 py-4 border-t border-gray-100 space-y-3">
       <div className="flex justify-between items-center">
@@ -440,9 +448,10 @@ function CartFooter({ total, onPlaceOrder }: { total: number; onPlaceOrder: () =
       </div>
       <button
         onClick={onPlaceOrder}
-        className="w-full py-3 bg-linear-to-r from-violet-600 to-violet-700 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-violet-800 active:scale-[0.98] transition-all shadow-lg shadow-violet-200"
+        disabled={isPlacingOrder}
+        className="w-full py-3 bg-linear-to-r from-violet-600 to-violet-700 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-violet-800 active:scale-[0.98] transition-all shadow-lg shadow-violet-200 disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        تأكيد الطلب
+        {isPlacingOrder ? 'جارٍ تأكيد الطلب...' : 'تأكيد الطلب'}
       </button>
     </div>
   );

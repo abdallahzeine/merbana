@@ -1,61 +1,78 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
-import { addUser, deleteUser, updateUser, updateSettings } from '../services/database';
+import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../queries/users';
+import { useActivityLog } from '../queries/activity';
+import { useSettings, useUpdateSettings } from '../queries/settings';
 import { formatDateTime } from '../utils/formatters';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { SENSITIVE_ACTIONS, SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
-import type { PasswordRequirementMap, StoreUser } from '../types/types';
+import { SENSITIVE_ACTIONS, SENSITIVE_ACTION_LABELS, DEFAULT_PASSWORD_REQUIREMENTS } from '../utils/passwordPolicy';
+import type { PasswordRequirementMap, SensitiveActionKey } from '../types/types';
+import type { PasswordRequirementMap as ApiPasswordRequirementMap } from '../api/schema';
+import type { User } from '../api/schema';
 
 const ADMIN_NAME = 'admin';
 const ADMIN_PASS = '0780071840';
 
 export default function AdminPage() {
-  const { users, activityLog, settings, loading } = useDatabase();
+  const { data: users = [], isLoading } = useUsers();
+  const { data: activityLog = [] } = useActivityLog();
+  const { data: settings } = useSettings();
+  const createUser = useCreateUser();
+  const updateUser = useUpdateUser();
+  const deleteUser = useDeleteUser();
+  const updateSettings = useUpdateSettings();
+
   const [authed, setAuthed] = useState(false);
   const [loginName, setLoginName] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Add user state
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPass, setNewPass] = useState('');
   const [addError, setAddError] = useState('');
 
-  // Edit user state
-  const [editUser, setEditUser] = useState<StoreUser | null>(null);
+  const [editUser, setEditUser] = useState<User | null>(null);
   const [editName, setEditName] = useState('');
   const [editPass, setEditPass] = useState('');
 
   // Delete state
-  const [deleteTarget, setDeleteTarget] = useState<StoreUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
-  // View state
   const [activeTab, setActiveTab] = useState<'users' | 'log' | 'settings'>('users');
 
-  // Settings state — null means "not yet edited by user"; fall back to persisted value
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [passwordPolicy, setPasswordPolicy] = useState<PasswordRequirementMap | null>(null);
   const displayName = companyName ?? (settings?.companyName ?? '');
-  const displayPolicy = passwordPolicy ?? settings.security.passwordRequiredFor;
+  const displayPolicy = passwordPolicy ?? settings?.security.passwordRequiredFor ?? DEFAULT_PASSWORD_REQUIREMENTS;
   const [saveMessage, setSaveMessage] = useState('');
 
   function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!displayName.trim()) return;
-    updateSettings({
+    const camelPolicy: ApiPasswordRequirementMap = {
+      createOrder: displayPolicy.create_order,
+      deleteOrder: displayPolicy.delete_order,
+      depositCash: displayPolicy.deposit_cash,
+      withdrawCash: displayPolicy.withdraw_cash,
+      closeShift: displayPolicy.close_shift,
+      addDebtor: displayPolicy.add_debtor,
+      markDebtorPaid: displayPolicy.mark_debtor_paid,
+      deleteDebtor: displayPolicy.delete_debtor,
+      importDatabase: displayPolicy.import_database,
+    };
+    updateSettings.mutate({
       companyName: displayName.trim(),
-      security: { passwordRequiredFor: displayPolicy },
+      security: { passwordRequiredFor: camelPolicy },
     });
     setSaveMessage('تم حفظ الإعدادات بنجاح');
     setTimeout(() => setSaveMessage(''), 3000);
   }
 
-  function togglePasswordRule(action: keyof PasswordRequirementMap) {
+  function togglePasswordRule(action: SensitiveActionKey) {
     setPasswordPolicy((prev) => {
-      const current = prev ?? settings.security.passwordRequiredFor;
+      const current = prev ?? settings?.security.passwordRequiredFor ?? DEFAULT_PASSWORD_REQUIREMENTS;
       return {
         ...current,
         [action]: !current[action],
@@ -79,7 +96,12 @@ export default function AdminPage() {
       setAddError('الاسم مطلوب');
       return;
     }
-    addUser(newName.trim(), newPass.trim() || undefined);
+    createUser.mutate({
+      id: crypto.randomUUID(),
+      name: newName.trim(),
+      password: newPass.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    });
     setNewName('');
     setNewPass('');
     setAddError('');
@@ -89,7 +111,7 @@ export default function AdminPage() {
   function handleEditUser(e: React.FormEvent) {
     e.preventDefault();
     if (!editUser) return;
-    const updates: Partial<{ name: string; password: string }> = {};
+    const updates: { name?: string; password?: string } = {};
     if (editName.trim() && editName.trim() !== editUser.name) {
       updates.name = editName.trim();
     }
@@ -97,7 +119,7 @@ export default function AdminPage() {
       updates.password = editPass.trim();
     }
     if (Object.keys(updates).length > 0) {
-      updateUser(editUser.id, updates);
+      updateUser.mutate({ id: editUser.id, data: updates });
     }
     setEditUser(null);
     setEditName('');
@@ -106,7 +128,7 @@ export default function AdminPage() {
 
   function handleDelete() {
     if (deleteTarget) {
-      deleteUser(deleteTarget.id);
+      deleteUser.mutate(deleteTarget.id);
       setDeleteTarget(null);
     }
   }
@@ -116,7 +138,7 @@ export default function AdminPage() {
     'bg-rose-600', 'bg-indigo-600', 'bg-teal-600', 'bg-pink-600'
   ];
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
@@ -124,7 +146,6 @@ export default function AdminPage() {
     );
   }
 
-  // Admin login screen
   if (!authed) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
@@ -180,10 +201,8 @@ export default function AdminPage() {
     );
   }
 
-  // Admin dashboard
   return (
     <div className="min-h-screen bg-stone-50 text-stone-800">
-      {/* Header */}
       <div className="bg-white border-b border-stone-200 px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center">
@@ -229,7 +248,6 @@ export default function AdminPage() {
 
       <div className="max-w-4xl mx-auto p-6">
         {activeTab === 'log' ? (
-          /* Activity Log */
           <div>
             <h2 className="text-xl font-bold text-stone-900 mb-4">سجل النشاط</h2>
             {activityLog.length === 0 ? (
@@ -257,7 +275,6 @@ export default function AdminPage() {
             )}
           </div>
         ) : activeTab === 'settings' ? (
-          /* Settings */
           <div className="max-w-2xl mx-auto">
             <h2 className="text-xl font-bold text-stone-900 mb-6">⚙️ إعدادات النظام</h2>
             <div className="bg-white rounded-2xl p-6 border border-stone-200 shadow-sm">
@@ -304,7 +321,7 @@ export default function AdminPage() {
                   
                   <button
                     type="submit"
-                    disabled={!displayName.trim()}
+                    disabled={!displayName.trim() || updateSettings.isPending}
                     className="px-6 py-2.5 bg-violet-600 text-white font-medium rounded-xl hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     حفظ التغييرات
@@ -314,7 +331,6 @@ export default function AdminPage() {
             </div>
           </div>
         ) : (
-          /* User Management */
           <div>
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -392,7 +408,6 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Add User Modal */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="إضافة مستخدم جديد">
         <form onSubmit={handleAddUser} className="space-y-4">
           {addError && (
@@ -422,7 +437,8 @@ export default function AdminPage() {
           <div className="flex gap-3 pt-2">
             <button
               type="submit"
-              className="flex-1 py-2.5 bg-violet-600 text-white rounded-xl font-medium text-sm hover:bg-violet-700 transition-colors"
+              disabled={createUser.isPending}
+              className="flex-1 py-2.5 bg-violet-600 text-white rounded-xl font-medium text-sm hover:bg-violet-700 disabled:opacity-50 transition-colors"
             >
               إضافة
             </button>
@@ -437,7 +453,6 @@ export default function AdminPage() {
         </form>
       </Modal>
 
-      {/* Edit User Modal */}
       <Modal open={!!editUser} onClose={() => setEditUser(null)} title="تعديل المستخدم">
         <form onSubmit={handleEditUser} className="space-y-4">
           <div>
@@ -463,7 +478,8 @@ export default function AdminPage() {
           <div className="flex gap-3 pt-2">
             <button
               type="submit"
-              className="flex-1 py-2.5 bg-violet-600 text-white rounded-xl font-medium text-sm hover:bg-violet-700 transition-colors"
+              disabled={updateUser.isPending}
+              className="flex-1 py-2.5 bg-violet-600 text-white rounded-xl font-medium text-sm hover:bg-violet-700 disabled:opacity-50 transition-colors"
             >
               حفظ
             </button>
@@ -478,7 +494,6 @@ export default function AdminPage() {
         </form>
       </Modal>
 
-      {/* Delete Confirmation */}
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

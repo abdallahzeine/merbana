@@ -104,6 +104,18 @@ def check_webview_backend(backend: str) -> None:
                 sys.exit(1)
 
 
+def print_migration_operator_steps(project_root: Path) -> None:
+    """Print the explicit Alembic operator step required before app startup."""
+    alembic_ini = project_root / "Deployment" / "backend" / "alembic.ini"
+    print("\nMigration operator step (required before app startup):")
+    print("  1) Backup SQLite files: merbana.db, merbana.db-wal, merbana.db-shm")
+    print("  2) Set MERBANA_DB_URL to target DB URL")
+    print(
+        "  3) Run: MERBANA_DB_URL='sqlite:////ABS/PATH/merbana.db' "
+        f"python3 -m alembic -c {alembic_ini} upgrade head"
+    )
+
+
 # ── Main ───────────────────────────────────────────────────────
 
 def main() -> None:
@@ -247,6 +259,8 @@ def main() -> None:
         )
     else:
         print("  pip install PyQt5 PyQtWebEngine\n")
+
+    print_migration_operator_steps(project_root)
 
     # Clean up PyInstaller work artefacts
     for path in (pi_build_dir, spec_file):

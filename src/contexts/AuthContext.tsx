@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import type { StoreUser } from '../types/types';
-import { logActivity } from '../services/database';
+import { logActivity } from '../api/activityApi';
 import { AuthContext } from './authContextDef';
 
 const SESSION_KEY = 'merbana_active_user';

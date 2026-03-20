@@ -1,15 +1,21 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { useDatabase } from '../hooks/useDatabase';
+import { useSettings } from '../queries/settings';
+import { useProducts } from '../queries/products';
+import { useDebtors } from '../queries/debtors';
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false);
   const { activeUser, logout } = useAuth();
-  const { settings, products, debtors } = useDatabase();
+  const settingsQuery = useSettings();
+  const productsQuery = useProducts();
+  const debtorsQuery = useDebtors();
 
-  // Badge counts
-  const lowStockCount = products.filter(p => p.trackStock && (p.stock || 0) <= 5).length;
+  const products = productsQuery.data ?? [];
+  const debtors = debtorsQuery.data ?? [];
+  const settings = settingsQuery.data;
+
   const unpaidDebtorCount = debtors.filter(d => !d.paidAt).length;
 
   useEffect(() => {
@@ -22,7 +28,7 @@ export default function Sidebar() {
 
   const NAV_ITEMS = [
     { to: '/', label: 'الرئيسية', icon: '🏠', badge: 0 },
-    { to: '/products', label: 'المنتجات', icon: '📦', badge: lowStockCount },
+    { to: '/products', label: 'المنتجات', icon: '📦', badge: 0 },
     { to: '/new-order', label: 'طلب جديد', icon: '🛒', badge: 0 },
     { to: '/orders', label: 'الطلبات', icon: '📋', badge: 0 },
     { to: '/register', label: 'الصندوق', icon: '💵', badge: 0 },
@@ -33,7 +39,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger */}
       <button
         className="fixed top-3 right-3 z-50 lg:hidden bg-white/90 backdrop-blur-sm text-stone-700 p-2.5 rounded-xl shadow-md border border-stone-200 active:scale-95 transition-transform"
         onClick={() => setOpen(!open)}
@@ -48,12 +53,10 @@ export default function Sidebar() {
         </svg>
       </button>
 
-      {/* Overlay */}
       {open && (
         <div className="fixed inset-0 bg-stone-900/30 backdrop-blur-sm z-30 lg:hidden" onClick={() => setOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`
           fixed inset-y-0 right-0 z-40 w-64 bg-white border-l border-stone-200 text-stone-800 flex flex-col shadow-xl
@@ -62,15 +65,13 @@ export default function Sidebar() {
           ${open ? 'translate-x-0' : 'translate-x-full'}
         `}
       >
-        {/* Brand */}
         <div className="px-6 py-5 border-b border-stone-100">
           <h1 className="text-xl font-bold tracking-tight bg-linear-to-r from-violet-600 to-amber-500 bg-clip-text text-transparent">
-            {settings.companyName}
+            {settings?.companyName ?? '...'}
           </h1>
           <p className="text-xs text-stone-400 mt-1">نظام إدارة المتجر</p>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           {NAV_ITEMS.map((item) => (
             <NavLink
@@ -97,7 +98,6 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        {/* User + Footer */}
         <div className="px-4 py-4 border-t border-stone-100">
           {activeUser && (
             <div className="flex items-center gap-3 mb-3">
@@ -118,7 +118,7 @@ export default function Sidebar() {
               </button>
             </div>
           )}
-          <p className="text-xs text-stone-300">© 2026 {settings.companyName}</p>
+          <p className="text-xs text-stone-300">© 2026 {settings?.companyName ?? '...'}</p>
         </div>
       </aside>
     </>

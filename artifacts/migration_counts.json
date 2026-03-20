@@ -1,0 +1,43 @@
+{
+  "migration_summary": {
+    "source_file": "C:\\Users\\abdallahzeine\\Desktop\\repo-kimi\\artifacts\\migration_source_copy.json",
+    "target_database": "C:\\Users\\abdallahzeine\\Desktop\\repo-kimi\\data\\merbana.db",
+    "timestamp": "2026-03-20T16:48:48.680085Z",
+    "dry_run": false,
+    "transaction_status": "committed"
+  },
+  "row_counts": {
+    "source": {
+      "store_settings": 1,
+      "password_requirements": 9,
+      "categories": 24,
+      "users": 12,
+      "products": 200,
+      "product_sizes": 218,
+      "orders": 1000,
+      "order_items": 3042,
+      "cash_transactions": 1000,
+      "activity_log": 5000,
+      "debtors": 300
+    },
+    "imported": {
+      "store_settings": 1,
+      "password_requirements": 9,
+      "categories": 24,
+      "users": 12,
+      "products": 200,
+      "product_sizes": 218,
+      "orders": 1000,
+      "order_items": 3042,
+      "cash_transactions": 1000,
+      "activity_log": 5000,
+      "debtors": 300
+    },
+    "mismatches": []
+  },
+  "quarantine_summary": {
+    "total_quarantined": 0,
+    "by_reason": {}
+  },
+  "validation_errors": []
+}

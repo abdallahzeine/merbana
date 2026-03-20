@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
+import { useDebtors } from '../queries/debtors';
+import { useSettings } from '../queries/settings';
+import { useCreateDebtor, useMarkDebtorPaid, useDeleteDebtor } from '../queries/debtors';
 import { useAuth } from '../hooks/useAuth';
-import { addDebtor, markDebtorPaid, deleteDebtor } from '../services/database';
 import { formatDate } from '../utils/formatters';
 import PasswordConfirmDialog from '../components/PasswordConfirmDialog';
 import { usePasswordGate } from '../hooks/usePasswordGate';
@@ -13,9 +14,17 @@ function formatCurrency(n: number) {
 }
 
 export default function DebtorsPage() {
-  const { debtors, settings } = useDatabase();
   const { activeUser } = useAuth();
   const navigate = useNavigate();
+  const debtorsQuery = useDebtors();
+  const settingsQuery = useSettings();
+  const createDebtor = useCreateDebtor();
+  const markDebtorPaid = useMarkDebtorPaid();
+  const deleteDebtor = useDeleteDebtor();
+
+  const debtors = debtorsQuery.data ?? [];
+  const settings = settingsQuery.data;
+  const passwordGate = usePasswordGate({ settings: settings!, activeUser });
 
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
@@ -23,7 +32,8 @@ export default function DebtorsPage() {
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid'>('all');
-  const passwordGate = usePasswordGate({ settings, activeUser });
+
+  const loading = debtorsQuery.isLoading || settingsQuery.isLoading;
 
   const totalOwed = debtors
     .filter((d) => !d.paidAt)
@@ -44,24 +54,45 @@ export default function DebtorsPage() {
     if (!trimmedName) { setError('الاسم مطلوب'); return; }
     if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) { setError('أدخل مبلغاً صحيحاً'); return; }
     passwordGate.runProtected('add_debtor', SENSITIVE_ACTION_LABELS.add_debtor, () => {
-      addDebtor(trimmedName, parsedAmount, note.trim() || undefined);
-      setName('');
-      setAmount('');
-      setNote('');
-      setError('');
+      createDebtor.mutate({
+        id: crypto.randomUUID(),
+        name: trimmedName,
+        amount: parsedAmount,
+        note: note.trim() || undefined,
+        createdAt: new Date().toISOString(),
+      }, {
+        onSuccess: () => {
+          setName('');
+          setAmount('');
+          setNote('');
+          setError('');
+        },
+        onError: () => {
+          setError('فشل إضافة المدين');
+        },
+      });
     });
   }
 
   function handleDelete(id: string) {
     passwordGate.runProtected('delete_debtor', SENSITIVE_ACTION_LABELS.delete_debtor, () => {
-      deleteDebtor(id);
+      deleteDebtor.mutate(id, {
+        onSettled: () => setConfirmDelete(null),
+        onError: () => {},
+      });
     });
-    setConfirmDelete(null);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto" dir="rtl">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-stone-900">الديون</h1>
@@ -78,7 +109,6 @@ export default function DebtorsPage() {
         </Link>
       </div>
 
-      {/* Summary Card */}
       <div className="bg-white border border-stone-200 rounded-2xl p-5 flex items-center justify-between shadow-sm">
         <div>
           <p className="text-stone-500 text-sm">إجمالي الديون غير المسددة</p>
@@ -91,7 +121,6 @@ export default function DebtorsPage() {
         </div>
       </div>
 
-      {/* Add Form */}
       <form onSubmit={handleAdd} className="bg-white border border-stone-200 rounded-2xl p-5 space-y-4 shadow-sm">
         <h2 className="text-stone-800 font-semibold text-base">إضافة مدين جديد</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -129,15 +158,14 @@ export default function DebtorsPage() {
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button
           type="submit"
-          className="bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition-all duration-200 shadow-sm"
+          disabled={createDebtor.isPending}
+          className="bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition-all duration-200 shadow-sm disabled:opacity-50"
         >
-          + إضافة
+          {createDebtor.isPending ? '...' : '+ إضافة'}
         </button>
       </form>
 
-      {/* Filter + Table */}
       <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden shadow-sm">
-        {/* Filter Tabs */}
         <div className="flex border-b border-stone-100 px-4">
           {(['all', 'unpaid', 'paid'] as const).map((f) => {
             const labels = { all: 'الكل', unpaid: 'غير مسدد', paid: 'مسدد' };
@@ -212,7 +240,7 @@ export default function DebtorsPage() {
                           <button
                             onClick={() => {
                               passwordGate.runProtected('mark_debtor_paid', SENSITIVE_ACTION_LABELS.mark_debtor_paid, () => {
-                                markDebtorPaid(d.id);
+                                markDebtorPaid.mutate({ id: d.id });
                               });
                             }}
                             title="تسديد"

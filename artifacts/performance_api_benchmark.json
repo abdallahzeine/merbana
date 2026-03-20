@@ -1,0 +1,205 @@
+{
+  "generated_at": "2026-03-20T16:48:52Z",
+  "dataset_source": "C:\\Users\\abdallahzeine\\Desktop\\repo-kimi\\artifacts\\benchmark_source_dataset.json",
+  "warm_runs": 5,
+  "cold_runs": 2,
+  "environment": {
+    "db_path": "C:\\Users\\abdallahzeine\\Desktop\\repo-kimi\\data\\merbana.db",
+    "journal_mode": "wal",
+    "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]"
+  },
+  "migration": {
+    "duration_ms": 3520.709,
+    "command": "C:\\Users\\abdallahzeine\\Desktop\\repo-kimi\\.venv\\Scripts\\python.exe Deployment/migrate_json_to_sqlite.py --source C:\\Users\\abdallahzeine\\Desktop\\repo-kimi\\artifacts\\benchmark_source_dataset.json --overwrite",
+    "stdout_tail": "Post-import integrity_check: ok\nMigration completed successfully with full count parity.\n"
+  },
+  "results": [
+    {
+      "key": "orders_list",
+      "method": "GET",
+      "path": "/api/orders?limit=100&offset=0",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 3.415,
+        "p95_ms": 7.633,
+        "mean_ms": 4.315
+      },
+      "cold": {
+        "p50_ms": 3.834,
+        "p95_ms": 4.135,
+        "mean_ms": 3.834
+      }
+    },
+    {
+      "key": "orders_date_range",
+      "method": "GET",
+      "path": "/api/orders?limit=100&offset=0&date_from=2025-11-19T16:49:27Z&date_to=2026-03-20T16:26:27Z",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 3.834,
+        "p95_ms": 29.212,
+        "mean_ms": 10.401
+      },
+      "cold": {
+        "p50_ms": 3.989,
+        "p95_ms": 3.992,
+        "mean_ms": 3.989
+      }
+    },
+    {
+      "key": "orders_search_order_number",
+      "method": "GET",
+      "path": "/api/orders?limit=100&offset=0&search=1",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 3.746,
+        "p95_ms": 5.71,
+        "mean_ms": 4.232
+      },
+      "cold": {
+        "p50_ms": 4.54,
+        "p95_ms": 4.687,
+        "mean_ms": 4.54
+      }
+    },
+    {
+      "key": "products_search_filter",
+      "method": "GET",
+      "path": "/api/products?search=Themselves&category_id=009a8513-7e3b-56a3-a572-58b506913e48",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 1.95,
+        "p95_ms": 3.773,
+        "mean_ms": 2.421
+      },
+      "cold": {
+        "p50_ms": 2.457,
+        "p95_ms": 2.462,
+        "mean_ms": 2.457
+      }
+    },
+    {
+      "key": "dashboard_inputs_register",
+      "method": "GET",
+      "path": "/api/register?limit=50",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 8.045,
+        "p95_ms": 41.638,
+        "mean_ms": 16.886
+      },
+      "cold": {
+        "p50_ms": 8.72,
+        "p95_ms": 9.174,
+        "mean_ms": 8.72
+      }
+    },
+    {
+      "key": "receipt_lookup",
+      "method": "GET",
+      "path": "/api/orders/815da450-b8de-57b8-8509-9db032fc4ce5",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 2.239,
+        "p95_ms": 4.363,
+        "mean_ms": 2.779
+      },
+      "cold": {
+        "p50_ms": 3.352,
+        "p95_ms": 3.802,
+        "mean_ms": 3.352
+      }
+    },
+    {
+      "key": "debtors_unpaid",
+      "method": "GET",
+      "path": "/api/debtors?status=unpaid",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 2.682,
+        "p95_ms": 4.526,
+        "mean_ms": 3.199
+      },
+      "cold": {
+        "p50_ms": 3.443,
+        "p95_ms": 3.552,
+        "mean_ms": 3.443
+      }
+    },
+    {
+      "key": "activity_view",
+      "method": "GET",
+      "path": "/api/activity?limit=100&date_from=2025-11-19T16:49:27Z&date_to=2026-03-20T16:26:27Z",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 3.935,
+        "p95_ms": 5.822,
+        "mean_ms": 4.341
+      },
+      "cold": {
+        "p50_ms": 6.044,
+        "p95_ms": 6.66,
+        "mean_ms": 6.044
+      }
+    },
+    {
+      "key": "order_create_write",
+      "method": "POST",
+      "path": "/api/orders",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 4.49,
+        "p95_ms": 7.742,
+        "mean_ms": 5.241
+      },
+      "cold": {
+        "p50_ms": 7.871,
+        "p95_ms": 9.968,
+        "mean_ms": 7.871
+      }
+    },
+    {
+      "key": "register_deposit_write",
+      "method": "POST",
+      "path": "/api/register/deposit",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 3.184,
+        "p95_ms": 4.709,
+        "mean_ms": 3.404
+      },
+      "cold": {
+        "p50_ms": 3.324,
+        "p95_ms": 3.419,
+        "mean_ms": 3.324
+      }
+    },
+    {
+      "key": "register_withdrawal_write",
+      "method": "POST",
+      "path": "/api/register/withdrawal",
+      "warm_runs": 5,
+      "cold_runs": 2,
+      "warm": {
+        "p50_ms": 8.873,
+        "p95_ms": 9.49,
+        "mean_ms": 8.921
+      },
+      "cold": {
+        "p50_ms": 29.574,
+        "p95_ms": 47.822,
+        "mean_ms": 29.574
+      }
+    }
+  ]
+}

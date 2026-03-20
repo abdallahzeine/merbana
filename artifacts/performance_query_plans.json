@@ -1,0 +1,107 @@
+{
+  "generated_at": "2026-03-20T16:48:57Z",
+  "database_path": "C:\\Users\\abdallahzeine\\Desktop\\repo-kimi\\data\\merbana.db",
+  "journal_mode": "wal",
+  "plans": [
+    {
+      "key": "orders_date_range_desc",
+      "description": "Orders filtered by date range and sorted descending",
+      "sql": "SELECT id, date, total FROM orders WHERE date >= ? AND date <= ? ORDER BY date DESC LIMIT 100",
+      "params": [
+        "2025-11-19T16:49:27Z",
+        "2026-03-20T16:48:52.463374+00:00"
+      ],
+      "plan_details": [
+        "SEARCH orders USING INDEX ix_orders_date (date>? AND date<?)"
+      ]
+    },
+    {
+      "key": "orders_search_order_number",
+      "description": "Orders search by order number text pattern",
+      "sql": "SELECT id, order_number, date FROM orders WHERE CAST(order_number AS TEXT) LIKE ? ORDER BY date DESC LIMIT 100",
+      "params": [
+        "%100%"
+      ],
+      "plan_details": [
+        "SCAN orders USING INDEX ix_orders_date"
+      ]
+    },
+    {
+      "key": "products_search_name_category",
+      "description": "Product search by name wildcard and category filter",
+      "sql": "SELECT id, name, category_id FROM products WHERE name LIKE ? AND (? IS NULL OR category_id = ?) ORDER BY name LIMIT 100",
+      "params": [
+        "%A%",
+        "009a8513-7e3b-56a3-a572-58b506913e48",
+        "009a8513-7e3b-56a3-a572-58b506913e48"
+      ],
+      "plan_details": [
+        "SCAN products USING INDEX ix_products_name"
+      ]
+    },
+    {
+      "key": "debtors_unpaid",
+      "description": "Debtors unpaid filter sorted by created_at desc",
+      "sql": "SELECT id, created_at FROM debtors WHERE paid_at IS NULL ORDER BY created_at DESC LIMIT 100",
+      "params": [],
+      "plan_details": [
+        "SEARCH debtors USING INDEX ix_debtors_paid_at (paid_at=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "key": "debtors_paid",
+      "description": "Debtors paid filter sorted by created_at desc",
+      "sql": "SELECT id, created_at FROM debtors WHERE paid_at IS NOT NULL ORDER BY created_at DESC LIMIT 100",
+      "params": [],
+      "plan_details": [
+        "SCAN debtors USING INDEX ix_debtors_created_at"
+      ]
+    },
+    {
+      "key": "activity_user_date_range",
+      "description": "Activity logs filtered by user and date range",
+      "sql": "SELECT id, timestamp FROM activity_log WHERE (? IS NULL OR user_id = ?) AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT 100",
+      "params": [
+        "0bdf83be-0488-5199-9456-a9668877fb73",
+        "0bdf83be-0488-5199-9456-a9668877fb73",
+        "2025-11-19T16:49:27Z",
+        "2026-03-20T16:48:52.463374+00:00"
+      ],
+      "plan_details": [
+        "SEARCH activity_log USING INDEX ix_activity_log_timestamp (timestamp>? AND timestamp<?)"
+      ]
+    },
+    {
+      "key": "register_balance_python_equivalent",
+      "description": "Register balance source scan used by current service path",
+      "sql": "SELECT type, amount FROM cash_transactions",
+      "params": [],
+      "plan_details": [
+        "SCAN cash_transactions"
+      ]
+    },
+    {
+      "key": "register_balance_sql_aggregate_candidate",
+      "description": "Register balance SQL aggregate candidate for future optimization",
+      "sql": "SELECT COALESCE(SUM(CASE WHEN type IN ('sale', 'deposit') THEN amount ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN type IN ('withdrawal', 'shift_close') THEN amount ELSE 0 END), 0) FROM cash_transactions",
+      "params": [],
+      "plan_details": [
+        "SCAN cash_transactions"
+      ]
+    },
+    {
+      "key": "reports_daily_breakdown_server_candidate",
+      "description": "Server-side daily breakdown candidate replacing client aggregation",
+      "sql": "SELECT substr(date, 1, 10) AS day, COUNT(*) AS orders_count, SUM(total) AS revenue FROM orders WHERE date >= ? AND date <= ? GROUP BY day ORDER BY day ASC",
+      "params": [
+        "2025-11-19T16:49:27Z",
+        "2026-03-20T16:48:52.463374+00:00"
+      ],
+      "plan_details": [
+        "SEARCH orders USING INDEX ix_orders_date (date>? AND date<?)",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ]
+    }
+  ]
+}

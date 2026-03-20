@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { StoreSettings, StoreUser, SensitiveActionKey } from '../types/types';
 import { shouldRequirePasswordPrompt } from '../utils/passwordGate';
-import { logActivity } from '../services/database';
+import { logActivity } from '../api/activityApi';
 
 type PendingAction = {
   actionLabel: string;

@@ -1,23 +1,17 @@
-import { useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
+import { useOrder } from '../queries/orders';
+import { useSettings } from '../queries/settings';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
 
 export default function ReceiptPage() {
   const { id } = useParams<{ id: string }>();
-  const { orders, settings, loading } = useDatabase();
-  const receiptRef = useRef<HTMLDivElement>(null);
+  const orderQuery = useOrder(id!);
+  const settingsQuery = useSettings();
 
-  const order = orders.find((o) => o.id === id);
+  const order = orderQuery.data;
+  const settings = settingsQuery.data;
 
-  // Find adjacent orders for prev/next navigation
-  const sorted = [...orders].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const currentIdx = sorted.findIndex(o => o.id === id);
-  const prevOrder = currentIdx < sorted.length - 1 ? sorted[currentIdx + 1] : null;
-  const nextOrder = currentIdx > 0 ? sorted[currentIdx - 1] : null;
-
-
-  if (loading) {
+  if (orderQuery.isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
@@ -25,7 +19,7 @@ export default function ReceiptPage() {
     );
   }
 
-  if (!order) {
+  if (orderQuery.error || !order) {
     return (
       <div className="text-center py-16">
         <p className="text-5xl mb-4">🔍</p>
@@ -38,9 +32,8 @@ export default function ReceiptPage() {
   }
 
   return (
-    <div className="receipt-print-root min-h-screen bg-gray-50 p-6 flex flex-col items-center justify-center print:min-h-0 print:p-0 print:m-0 print:block">
+    <div className="receipt-print-root min-h-screen bg-gray-50 p-6 flex flex-col items-center justify-center print:min-h-0 print:p-0 print:m-0">
       <div className="w-full max-w-md print:max-w-full print:p-0 print:m-0">
-        {/* Action bar (hidden on print) */}
         <div className="flex items-center justify-between mb-4 print:hidden">
           <Link to="/orders" className="text-sm text-gray-500 hover:text-violet-600 flex items-center gap-1">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -56,40 +49,9 @@ export default function ReceiptPage() {
           </button>
         </div>
 
-        {/* Prev / Next order navigation */}
-        <div className="flex items-center justify-between mb-3 print:hidden">
-          <div>
-            {nextOrder && (
-              <Link
-                to={`/receipt/${nextOrder.id}`}
-                className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-violet-600 transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                #{String(nextOrder.orderNumber).padStart(3, '0')} الأحدث
-              </Link>
-            )}
-          </div>
-          <div>
-            {prevOrder && (
-              <Link
-                to={`/receipt/${prevOrder.id}`}
-                className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-violet-600 transition-colors"
-              >
-                الأقدم #{String(prevOrder.orderNumber).padStart(3, '0')}
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </Link>
-            )}
-          </div>
-        </div>
-
-        {/* Receipt */}
-        <div ref={receiptRef} className="bg-white rounded-2xl shadow-sm border border-black max-w-md mx-auto print:shadow-none print:border-none print:max-w-full print:rounded-none print:mx-0">
+        <div className="bg-white rounded-2xl shadow-sm border border-black max-w-md mx-auto print:shadow-none print:border-none print:max-w-full print:rounded-none print:mx-0">
           <div className="px-8 py-6 text-center border-b border-dashed border-black">
-            <h1 className="text-lg font-bold text-black">{settings.companyName}</h1>
+            <h1 className="text-lg font-bold text-black">{settings?.companyName ?? '...'}</h1>
             <p className="text-xl font-bold text-black mt-2">طلب #{String(order.orderNumber ?? '–').padStart(3, '0')}</p>
             <p className="text-xs font-bold text-black mt-1">{formatDateTime(order.date)}</p>
             {order.paymentMethod && (
@@ -145,7 +107,6 @@ export default function ReceiptPage() {
           </div>
         </div>
 
-        {/* Post-receipt quick actions */}
         <div className="mt-4 flex items-center justify-center gap-3 print:hidden">
           <Link
             to="/new-order"
