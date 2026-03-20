@@ -21,6 +21,12 @@
 #          Merbana        ← shell wrapper — double-click this!
 #  5.  Creates a .desktop launcher icon on the Desktop
 #
+#  Scope: BUILD/INSTALL ONLY.
+#  - Does NOT pull from git
+#  - Does NOT run update workflow
+#  - Does NOT run migration/update scripts
+#  Use Deployment/update_merbana.sh for update/redeploy operations.
+#
 #  NOTE: Safe to run as root — output lands on the real user's Desktop.
 #
 #  WHY NO PyInstaller?
@@ -435,5 +441,6 @@ echo -e "    app/     : Python launcher + venv"
 echo ""
 echo -e "  Run:  bash ${WRAPPER}"
 echo -e "  Or double-click 'Merbana' on the Desktop."
+echo -e "  Updates: run Deployment/update_merbana.sh (separate workflow)."
 echo -e "${BOLD}=================================================================${RESET}"
 echo ""
