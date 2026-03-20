@@ -238,7 +238,7 @@ run_migrations() {
 
 write_runtime_launcher() {
   info "Writing browser-based runtime launcher at ${RUNTIME_LAUNCHER_PY}"
-  cat > "${RUNTIME_LAUNCHER_PY}" <<EOF
+  cat > "${RUNTIME_LAUNCHER_PY}" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
