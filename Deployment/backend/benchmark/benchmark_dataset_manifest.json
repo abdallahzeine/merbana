@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-03-20T16:45:27Z",
+  "source_dataset": "artifacts/benchmark_source_dataset.json",
+  "seed": 42,
+  "dataset": {
+    "products": 200,
+    "orders": 1000,
+    "activity_log": 5000,
+    "register_transactions": 1000,
+    "debtors": 300,
+    "categories": 24,
+    "users": 12
+  }
+}

@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
+import { useOrders } from '../queries/orders';
+import { useDebtors } from '../queries/debtors';
+import { useSettings } from '../queries/settings';
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters';
 import {
   getPeriod,
@@ -66,7 +68,17 @@ function Section({ title, icon, children, action }: {
 
 /* ─── Main component ─────────────────────────────────── */
 export default function ReportsPage() {
-  const { orders, products, debtors, settings, loading } = useDatabase();
+  const ordersResult = useOrders();
+  const debtorsResult = useDebtors();
+  const settingsResult = useSettings();
+
+  const orders = ordersResult.data ?? [];
+  const debtors = debtorsResult.data ?? [];
+  const settings = settingsResult.data;
+
+  const isLoading = ordersResult.isLoading || debtorsResult.isLoading || settingsResult.isLoading;
+  const error = ordersResult.error || debtorsResult.error || settingsResult.error;
+
   const [preset, setPreset] = useState<ReportPreset>('today');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -79,6 +91,21 @@ export default function ReportsPage() {
   const stats = useMemo(() => calculateStats(filtered), [filtered]);
   const topProducts = useMemo(() => getTopProducts(filtered, 10), [filtered]);
   const dailyData = useMemo(() => getDailyBreakdown(filtered, period), [filtered, period]);
+  const totalUniqueProducts = useMemo(() => {
+    const productIds = new Set<string>();
+
+    filtered.forEach((order) => {
+      const orderItems = Array.isArray(order.items) ? order.items : [];
+
+      orderItems.forEach((item) => {
+        if (item.productId) {
+          productIds.add(item.productId);
+        }
+      });
+    });
+
+    return productIds.size;
+  }, [filtered]);
 
   /* ── Comparison: previous equal-length period ── */
   const prevPeriod = useMemo(() => {
@@ -101,13 +128,6 @@ export default function ReportsPage() {
   }, [filtered]);
   const maxHourlyCount = Math.max(...hourlyMap, 1);
 
-  /* ── Product catalog health ── */
-  const totalProducts = products.length;
-  const trackedProducts = products.filter(p => p.trackStock).length;
-  const lowStockProducts = products.filter(p => p.trackStock && (p.stock || 0) <= 5);
-  const outOfStockProducts = products.filter(p => p.trackStock && (p.stock || 0) === 0);
-  const estimatedStockValue = products.reduce((s, p) => s + (p.trackStock ? (p.stock || 0) * p.price : 0), 0);
-
   /* ── Debtors ── */
   const unpaidDebtors = debtors.filter(d => !d.paidAt);
   const totalUnpaid = unpaidDebtors.reduce((s, d) => s + d.amount, 0);
@@ -127,7 +147,7 @@ export default function ReportsPage() {
     if (!el) return;
     const win = window.open('', '_blank', 'width=800,height=900');
     if (!win) return;
-    win.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><title>تقرير - ${settings.companyName}</title>
+    win.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><title>تقرير - ${settings?.companyName}</title>
     <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;direction:rtl;padding:24px;color:#111;background:#fff;font-size:12px}
     h1{font-size:18px;font-weight:bold;text-align:center;margin-bottom:4px}.subtitle{font-size:12px;color:#666;text-align:center;margin-bottom:16px}
     table{width:100%;border-collapse:collapse;margin-bottom:16px}th,td{padding:5px 8px;border:1px solid #ccc;text-align:right;font-size:11px}th{background:#f5f5f5;font-weight:bold}
@@ -137,10 +157,21 @@ export default function ReportsPage() {
     win.onload = () => { win.focus(); win.print(); win.onafterprint = () => win.close(); };
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <p className="text-red-500 font-medium mb-2">حدث خطأ في تحميل البيانات</p>
+          <p className="text-sm text-gray-400">{String(error)}</p>
+        </div>
       </div>
     );
   }
@@ -303,7 +334,7 @@ export default function ReportsPage() {
                 <span className="text-xl">🎯</span>
               </div>
               <p className="text-3xl font-bold text-gray-900">{topProducts.length}</p>
-              <p className="text-xs text-gray-400 mt-2">من {totalProducts} منتج في الكتالوج</p>
+              <p className="text-xs text-gray-400 mt-2">{totalUniqueProducts} صنف مبيع في هذا التقرير</p>
             </div>
           </div>
 
@@ -450,7 +481,7 @@ export default function ReportsPage() {
                         <div className="flex items-center gap-4 shrink-0">
                           <span className="text-xs text-gray-500">{pctRevOfTotal}% من الإيرادات</span>
                           <span className="text-xs text-gray-500 hidden sm:inline">{formatCurrency(p.revenue)}</span>
-                          <span className="text-sm font-bold text-gray-900 min-w-[40px] text-left">{p.quantity}×</span>
+                          <span className="text-sm font-bold text-gray-900 min-w-10 text-left">{p.quantity}×</span>
                         </div>
                       </div>
                       <ProgressBar value={p.quantity} max={maxQ} color="violet" />
@@ -461,52 +492,8 @@ export default function ReportsPage() {
             </Section>
           )}
 
-          {/* ── Product Catalog Health + Debtors ── */}
+          {/* ── Debtors ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Catalog health */}
-            <Section title="صحة المخزون" icon="📦"
-              action={
-                <Link to="/products" className="text-xs text-violet-600 hover:underline">إدارة المخزون ←</Link>
-              }
-            >
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-gray-900">{totalProducts}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">منتج في الكتالوج</p>
-                  </div>
-                  <div className="bg-violet-50 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-violet-700">{trackedProducts}</p>
-                    <p className="text-xs text-violet-500 mt-0.5">منتج مع تتبع المخزون</p>
-                  </div>
-                  <div className={`rounded-xl p-3 text-center ${lowStockProducts.length > 0 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
-                    <p className={`text-2xl font-bold ${lowStockProducts.length > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                      {lowStockProducts.length}
-                    </p>
-                    <p className={`text-xs mt-0.5 ${lowStockProducts.length > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                      منخفض المخزون (≤5)
-                    </p>
-                  </div>
-                  <div className={`rounded-xl p-3 text-center ${outOfStockProducts.length > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
-                    <p className={`text-2xl font-bold ${outOfStockProducts.length > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                      {outOfStockProducts.length}
-                    </p>
-                    <p className={`text-xs mt-0.5 ${outOfStockProducts.length > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                      نفد المخزون
-                    </p>
-                  </div>
-                </div>
-                {trackedProducts > 0 && (
-                  <div className="pt-2 border-t border-gray-50">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">قيمة المخزون المتبقي</span>
-                      <span className="text-sm font-bold text-gray-900">{formatCurrency(estimatedStockValue)}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Section>
-
             {/* Debtors */}
             <Section title="ملخص الديون" icon="💳"
               action={
@@ -596,8 +583,8 @@ export default function ReportsPage() {
                             </Link>
                           </td>
                           <td className="py-3 text-xs text-gray-500">{formatDateTime(order.date)}</td>
-                          <td className="py-3 text-xs text-gray-600 hidden md:table-cell max-w-[200px] truncate">
-                            {order.items.map(i => i.name).join('، ')}
+                          <td className="py-3 text-xs text-gray-600 hidden md:table-cell max-w-50 truncate">
+                            {order.note || '—'}
                           </td>
                           <td className="py-3 text-center">
                             <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -645,7 +632,7 @@ export default function ReportsPage() {
 
       {/* ── Hidden Print Content ── */}
       <div ref={printRef} style={{ display: 'none' }}>
-        <h1>{settings.companyName} – تقرير</h1>
+        <h1>{settings?.companyName} – تقرير</h1>
         <p className="subtitle">{period.label}</p>
         <table>
           <tbody>
@@ -680,7 +667,7 @@ export default function ReportsPage() {
               <tr key={order.id}>
                 <td>#{String(order.orderNumber ?? '–').padStart(3, '0')}</td>
                 <td>{formatDate(order.date)}</td>
-                <td>{order.items.map(i => i.name).join('، ')}</td>
+                <td>{order.note || '—'}</td>
                 <td>{order.paymentMethod === 'cash' ? 'نقدي' : 'ShamCash'}</td>
                 <td><strong>{formatCurrency(order.total)}</strong></td>
               </tr>

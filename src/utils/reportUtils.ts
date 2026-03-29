@@ -115,8 +115,10 @@ export function calculateStats(orders: Order[]): ReportStats {
     if (order.orderType === 'dine_in') dineInCount++;
     else takeawayCount++;
 
+    if (!order.items) continue;
     for (const item of order.items) {
       totalItemsSold += item.quantity;
+      if (!item.productId) continue;
       const existing = productSales.get(item.productId);
       if (existing) {
         existing.quantity += item.quantity;
@@ -194,7 +196,9 @@ export function getTopProducts(orders: Order[], limit = 5): { name: string; quan
   const map = new Map<string, { name: string; quantity: number; revenue: number }>();
 
   for (const order of orders) {
+    if (!order.items) continue;
     for (const item of order.items) {
+      if (!item.productId) continue;
       const existing = map.get(item.productId);
       if (existing) {
         existing.quantity += item.quantity;

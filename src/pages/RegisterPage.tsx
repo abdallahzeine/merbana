@@ -1,60 +1,112 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../hooks/useAuth';
-import { depositCash, withdrawCash, closeShift } from '../services/database';
+import { queryKeys } from '../queries/queryKeys';
+import { useRegister, useCloseShift } from '../queries/register';
+import { useOrders } from '../queries/orders';
+import { useSettings } from '../queries/settings';
+import { depositCash as depositCashApi, withdrawCash as withdrawCashApi } from '../api/registerApi';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import PasswordConfirmDialog from '../components/PasswordConfirmDialog';
 import { usePasswordGate } from '../hooks/usePasswordGate';
 import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
+import type { StoreSettings } from '../types/types';
 
 type ModalType = null | 'deposit' | 'withdraw' | 'close_shift';
 
 export default function RegisterPage() {
-  const { register, orders, settings, loading } = useDatabase();
+  const queryClient = useQueryClient();
   const { activeUser } = useAuth();
   const [modal, setModal] = useState<ModalType>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [toast, setToast] = useState('');
-  const passwordGate = usePasswordGate({ settings, activeUser });
+
+  const { data: register } = useRegister();
+  const { data: orders } = useOrders();
+  const { data: settings } = useSettings() as { data: StoreSettings | undefined };
+  const passwordGate = usePasswordGate({ settings: settings!, activeUser });
+
+  const depositCash = useMutation({
+    mutationFn: ({ amount, note }: { amount: number; note?: string }) => {
+      return depositCashApi(amount, note);
+    },
+    onMutate: async ({ amount: val, note: noteVal }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.register.all });
+      const previous = queryClient.getQueryData(queryKeys.register.all);
+      if (previous && typeof previous === 'object' && 'currentBalance' in previous) {
+        const prev = previous as { currentBalance: number; transactions: Array<{ id: string; type: string; amount: number; note?: string; date: string; orderId?: string; userId?: string }> };
+        const optimisticTx = {
+          id: `temp-${Date.now()}`,
+          type: 'deposit' as const,
+          amount: val,
+          note: noteVal || 'إيداع نقدي',
+          date: new Date().toISOString(),
+          userId: activeUser?.id,
+        };
+        queryClient.setQueryData(queryKeys.register.all, {
+          currentBalance: prev.currentBalance + val,
+          transactions: [optimisticTx, ...prev.transactions],
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.register.all, context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.register.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.activity.all });
+    },
+  });
+
+  const withdrawCash = useMutation({
+    mutationFn: ({ amount, note: noteVal }: { amount: number; note?: string }) => {
+      return withdrawCashApi(amount, noteVal);
+    },
+    onMutate: async ({ amount: val, note: noteVal }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.register.all });
+      const previous = queryClient.getQueryData(queryKeys.register.all);
+      if (previous && typeof previous === 'object' && 'currentBalance' in previous) {
+        const prev = previous as { currentBalance: number; transactions: Array<{ id: string; type: string; amount: number; note?: string; date: string; orderId?: string; userId?: string }> };
+        const optimisticTx = {
+          id: `temp-${Date.now()}`,
+          type: 'withdrawal' as const,
+          amount: -val,
+          note: noteVal || 'سحب نقدي',
+          date: new Date().toISOString(),
+          userId: activeUser?.id,
+        };
+        queryClient.setQueryData(queryKeys.register.all, {
+          currentBalance: prev.currentBalance - val,
+          transactions: [optimisticTx, ...prev.transactions],
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.register.all, context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.register.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.activity.all });
+    },
+  });
+
+  const closeShiftMutation = useCloseShift();
+
+  const isLoading = !register || !orders || !settings;
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
-  }
-
-  function handleDeposit() {
-    const val = parseFloat(amount);
-    if (!val || val <= 0) return;
-    passwordGate.runProtected('deposit_cash', SENSITIVE_ACTION_LABELS.deposit_cash, () => {
-      depositCash(val, note.trim() || 'إيداع نقدي');
-      showToast(`تم إضافة ${formatCurrency(val)} للصندوق`);
-      resetModal();
-    });
-  }
-
-  function handleWithdraw() {
-    const val = parseFloat(amount);
-    if (!val || val <= 0) return;
-    passwordGate.runProtected('withdraw_cash', SENSITIVE_ACTION_LABELS.withdraw_cash, () => {
-      withdrawCash(val, note.trim() || 'سحب نقدي');
-      showToast(`تم سحب ${formatCurrency(val)}`);
-      resetModal();
-    });
-  }
-
-  function handleCloseShift() {
-    const taken = register.currentBalance;
-    const closeNote = note.trim() || undefined;
-    setModal(null);
-    passwordGate.runProtected('close_shift', SENSITIVE_ACTION_LABELS.close_shift, () => {
-      closeShift(taken, closeNote);
-      showToast(`تم إغلاق الوردية — ${formatCurrency(taken)} تم تحصيلها`);
-      resetModal();
-    });
   }
 
   function resetModal() {
@@ -63,7 +115,39 @@ export default function RegisterPage() {
     setNote('');
   }
 
-  if (loading) {
+  async function handleDeposit() {
+    const val = parseFloat(amount);
+    if (!val || val <= 0) return;
+    passwordGate.runProtected('deposit_cash', SENSITIVE_ACTION_LABELS.deposit_cash, async () => {
+      await depositCash.mutateAsync({ amount: val, note: note.trim() || 'إيداع نقدي' });
+      showToast(`تم إضافة ${formatCurrency(val)} للصندوق`);
+      resetModal();
+    });
+  }
+
+  async function handleWithdraw() {
+    const val = parseFloat(amount);
+    if (!val || val <= 0) return;
+    passwordGate.runProtected('withdraw_cash', SENSITIVE_ACTION_LABELS.withdraw_cash, async () => {
+      await withdrawCash.mutateAsync({ amount: val, note: note.trim() || 'سحب نقدي' });
+      showToast(`تم سحب ${formatCurrency(val)}`);
+      resetModal();
+    });
+  }
+
+  async function handleCloseShift() {
+    if (!register || register.currentBalance == null) return;
+    const taken = register.currentBalance;
+    const closeNote = note.trim() || undefined;
+    setModal(null);
+    passwordGate.runProtected('close_shift', SENSITIVE_ACTION_LABELS.close_shift, async () => {
+      await closeShiftMutation.mutateAsync({ note: closeNote });
+      showToast(`تم إغلاق الوردية — ${formatCurrency(taken)} تم تحصيلها`);
+      resetModal();
+    });
+  }
+
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
@@ -71,7 +155,6 @@ export default function RegisterPage() {
     );
   }
 
-  // Today's sales summary
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayEnd = new Date(today);
@@ -82,7 +165,9 @@ export default function RegisterPage() {
   });
   const todayRevenue = todayOrders.reduce((s, o) => s + o.total, 0);
 
-  const sortedTx = [...register.transactions].reverse();
+  const sortedTx = [...(register?.transactions ?? [])].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  );
 
   const txLabels: Record<string, string> = {
     sale: 'بيع',
@@ -93,7 +178,6 @@ export default function RegisterPage() {
 
   return (
     <div>
-      {/* Toast */}
       {toast && (
         <div className="fixed top-4 left-4 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium animate-[scaleIn_0.2s_ease-out]">
           {toast}
@@ -105,7 +189,6 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-bold text-gray-900">الصندوق</h1>
           <p className="text-sm text-gray-500 mt-1">تتبع التدفق النقدي وإدارة الورديات</p>
         </div>
-        {/* Quick shortcut */}
         <Link
           to="/new-order"
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200 shrink-0"
@@ -117,16 +200,14 @@ export default function RegisterPage() {
         </Link>
       </div>
 
-      {/* Balance Card */}
       <div className="bg-linear-to-br from-violet-600 to-indigo-700 rounded-2xl p-8 mb-4 text-white shadow-xl shadow-violet-500/20">
         <p className="text-sm font-medium text-violet-200 mb-1">الرصيد الحالي</p>
-        <p className="text-5xl font-bold tracking-tight">{formatCurrency(register.currentBalance)}</p>
+        <p className="text-5xl font-bold tracking-tight">{formatCurrency(register?.currentBalance ?? 0)}</p>
         <p className="text-sm text-violet-300 mt-2">
-          {register.transactions.length} معاملة مسجلة
+          {register?.transactions?.length ?? 0} معاملة مسجلة
         </p>
       </div>
 
-      {/* Today's sales summary */}
       <div className="flex items-center gap-3 mb-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
         <span className="text-lg">📅</span>
         <div className="flex-1 text-sm">
@@ -139,7 +220,6 @@ export default function RegisterPage() {
         </Link>
       </div>
 
-      {/* Quick Actions */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <button
           onClick={() => setModal('deposit')}
@@ -181,7 +261,6 @@ export default function RegisterPage() {
         </button>
       </div>
 
-      {/* Transaction History */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">سجل المعاملات</h2>
@@ -196,7 +275,7 @@ export default function RegisterPage() {
             <p className="text-sm">لا توجد معاملات بعد</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+          <div className="divide-y divide-gray-50 max-h-125 overflow-y-auto">
             {sortedTx.map((tx) => {
               const inner = (
                 <div className="flex items-center gap-3">
@@ -222,7 +301,6 @@ export default function RegisterPage() {
                 </div>
               );
 
-              // Sale transactions with an orderId get a clickable receipt link
               if (tx.type === 'sale' && tx.orderId) {
                 return (
                   <Link
@@ -257,7 +335,6 @@ export default function RegisterPage() {
         )}
       </div>
 
-      {/* Add Cash Modal */}
       <Modal open={modal === 'deposit'} onClose={resetModal} title="إضافة نقد">
         <div className="space-y-4">
           <div>
@@ -289,16 +366,15 @@ export default function RegisterPage() {
             </button>
             <button
               onClick={handleDeposit}
-              disabled={!amount}
+              disabled={!amount || depositCash.isPending}
               className="px-6 py-2.5 bg-emerald-500 text-white text-sm font-medium rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              إضافة نقد
+              {depositCash.isPending ? 'جارٍ الإضافة...' : 'إضافة نقد'}
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* Withdraw Modal */}
       <Modal open={modal === 'withdraw'} onClose={resetModal} title="سحب نقد">
         <div className="space-y-4">
           <div>
@@ -330,22 +406,21 @@ export default function RegisterPage() {
             </button>
             <button
               onClick={handleWithdraw}
-              disabled={!amount}
+              disabled={!amount || withdrawCash.isPending}
               className="px-6 py-2.5 bg-amber-500 text-white text-sm font-medium rounded-xl hover:bg-amber-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              سحب
+              {withdrawCash.isPending ? 'جارٍ السحب...' : 'سحب'}
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* Close Shift Confirmation */}
       <ConfirmDialog
         open={modal === 'close_shift'}
         onClose={resetModal}
         onConfirm={handleCloseShift}
         title="إغلاق الوردية"
-        message={`سيتم تحصيل ${formatCurrency(register.currentBalance)} من الصندوق وإعادة تعيين الرصيد إلى 0.00 ل.س. هل تريد المتابعة؟`}
+        message={`سيتم تحصيل ${formatCurrency(register?.currentBalance ?? 0)} من الصندوق وإعادة تعيين الرصيد إلى 0.00 ل.س. هل تريد المتابعة؟`}
         confirmLabel="إغلاق الوردية"
         danger
       />

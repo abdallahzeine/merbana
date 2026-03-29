@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { useDatabase } from '../hooks/useDatabase';
+import { useUsers } from '../queries/users';
+import { useSettings } from '../queries/settings';
 import type { StoreUser } from '../types/types';
+import type { User } from '../api/schema';
 
 const COLORS = [
   'bg-violet-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500',
@@ -13,14 +15,23 @@ function getInitials(name: string) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 }
 
+function toStoreUser(u: User): StoreUser {
+  return { ...u, password: u.password ?? undefined };
+}
+
 export default function LoginPage() {
   const { login } = useAuth();
-  const { users, settings, loading } = useDatabase();
   const navigate = useNavigate();
+  const usersQuery = useUsers();
+  const settingsQuery = useSettings();
 
-  const [selectedUser, setSelectedUser] = useState<StoreUser | null>(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  const loading = usersQuery.isLoading || settingsQuery.isLoading;
+  const users = usersQuery.data ?? [];
+  const settings = settingsQuery.data;
 
   const greeting = (() => {
     const hour = new Date().getHours();
@@ -29,13 +40,13 @@ export default function LoginPage() {
     return 'مساء النور 🌙';
   })();
 
-  function handleUserClick(user: StoreUser) {
+  function handleUserClick(user: User) {
     if (user.password) {
       setSelectedUser(user);
       setPassword('');
       setError('');
     } else {
-      login(user);
+      login(toStoreUser(user));
       navigate('/', { replace: true });
     }
   }
@@ -44,7 +55,7 @@ export default function LoginPage() {
     e.preventDefault();
     if (!selectedUser) return;
     if (password === selectedUser.password) {
-      login(selectedUser);
+      login(toStoreUser(selectedUser));
       navigate('/', { replace: true });
     } else {
       setError('كلمة المرور غير صحيحة');
@@ -59,20 +70,30 @@ export default function LoginPage() {
     );
   }
 
+  if (usersQuery.error || settingsQuery.error) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">فشل تحميل البيانات</p>
+          <button onClick={() => { usersQuery.refetch(); settingsQuery.refetch(); }} className="px-4 py-2 bg-violet-600 text-white rounded-xl">
+            إعادة المحاولة
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6">
-      {/* Subtle background texture */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,#ede9fe_0%,transparent_60%)] pointer-events-none" />
 
-      {/* Header */}
       <div className="relative text-center mb-10 animate-fade-in">
         <h1 className="text-3xl sm:text-4xl font-bold bg-linear-to-r from-violet-600 to-amber-500 bg-clip-text text-transparent mb-2">
-          {settings.companyName}
+          {settings?.companyName ?? '...'}
         </h1>
         <p className="text-stone-500 text-lg">{greeting}</p>
       </div>
 
-      {/* Password prompt for selected user */}
       {selectedUser ? (
         <div className="relative w-full max-w-xs animate-fade-in">
           <div className="bg-white rounded-2xl border border-stone-200 shadow-lg p-6">
@@ -115,7 +136,6 @@ export default function LoginPage() {
           </div>
         </div>
       ) : (
-        /* User selection grid */
         <div className="relative w-full max-w-lg">
           {users.length === 0 ? (
             <div className="text-center py-8 text-stone-500">
@@ -156,7 +176,6 @@ export default function LoginPage() {
         </div>
       )}
 
-      {/* Admin link */}
       <div className="relative mt-10">
         <a
           href="/admin"

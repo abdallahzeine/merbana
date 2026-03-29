@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
+import { useOrders } from '../queries/orders';
+import { useSettings } from '../queries/settings';
+import { useDeleteOrder } from '../queries/orders';
 import { useAuth } from '../hooks/useAuth';
-import { deleteOrder } from '../services/database';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
 import EmptyState from '../components/EmptyState';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -12,13 +13,15 @@ import { SENSITIVE_ACTION_LABELS } from '../utils/passwordPolicy';
 import type { Order } from '../types/types';
 
 export default function OrdersPage() {
-  const { orders, settings, loading } = useDatabase();
+  const { data: orders = [], isLoading, error } = useOrders();
+  const { data: settings } = useSettings();
   const { activeUser } = useAuth();
+  const deleteOrder = useDeleteOrder();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get('search') || '');
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [page, setPage] = useState(1);
-  const passwordGate = usePasswordGate({ settings, activeUser });
+  const passwordGate = usePasswordGate({ settings: settings!, activeUser });
   const ITEMS_PER_PAGE = 20;
 
   function updateSearch(val: string) {
@@ -44,7 +47,7 @@ export default function OrdersPage() {
   const filtered = sorted.filter(
     (o) =>
       String(o.orderNumber).includes(search) ||
-      o.items.some((i) => i.name.toLowerCase().includes(search.toLowerCase()))
+      o.note?.toLowerCase().includes(search.toLowerCase())
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
@@ -56,15 +59,23 @@ export default function OrdersPage() {
       const target = deleteTarget;
       setDeleteTarget(null);
       passwordGate.runProtected('delete_order', SENSITIVE_ACTION_LABELS.delete_order, () => {
-        deleteOrder(target.id);
+        deleteOrder.mutate(target.id);
       });
     }
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-red-500">حدث خطأ في تحميل الطلبات</div>
       </div>
     );
   }
@@ -150,13 +161,10 @@ export default function OrdersPage() {
                     )}
                   </div>
                   <p className="text-sm text-gray-600">
-                    {order.items.map((i) => `${i.name} ×${i.quantity}`).join('، ')}
+                    {order.note || 'بدون ملاحظات'}
                   </p>
                 </Link>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-500">
-                    {order.items.reduce((s, i) => s + i.quantity, 0)} عنصر
-                  </span>
                   <span className="text-lg font-bold text-gray-900">{formatCurrency(order.total)}</span>
                   <Link
                     to={`/receipt/${order.id}`}

@@ -1,35 +1,45 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useDatabase } from '../hooks/useDatabase';
-import { addProduct, updateProduct, deleteProduct, addCategory, deleteCategory, adjustStock, bulkSetStock } from '../services/database';
+import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from '../queries/products';
+import { useCategories, useCreateCategory, useDeleteCategory } from '../queries/categories';
 import { formatCurrency } from '../utils/formatters';
+import { ApiError } from '../api/client';
 import Modal from '../components/Modal';
-import BulkStockModal from '../components/BulkStockModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import EmptyState from '../components/EmptyState';
 import type { Product } from '../types/types';
 
+interface ProductFormData {
+  name: string;
+  price: number;
+  categoryId: string | null;
+  sizes: { id: string; name: string; price: number; sortOrder: number }[];
+}
+
 export default function ProductsPage() {
-  const { products, categories, loading } = useDatabase();
+  const { data: products = [], isLoading: productsLoading } = useProducts();
+  const { data: categories = [], isLoading: categoriesLoading } = useCategories();
+
+  const createProduct = useCreateProduct();
+  const updateProduct = useUpdateProduct();
+  const deleteProduct = useDeleteProduct();
+  const createCategory = useCreateCategory();
+  const deleteCategory = useDeleteCategory();
+
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
-  const [bulkStockOpen, setBulkStockOpen] = useState(false);
   const [deleteCatTarget, setDeleteCatTarget] = useState<{ id: string; name: string } | null>(null);
   const [catError, setCatError] = useState('');
 
-  // Category state
   const [newCatName, setNewCatName] = useState('');
 
-  // Form state
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [sizes, setSizes] = useState<{ name: string; price: number }[]>([]);
-  const [trackStock, setTrackStock] = useState(false);
-  const [stock, setStock] = useState('');
   const [error, setError] = useState('');
 
   const filtered = products.filter((p) => {
@@ -44,8 +54,6 @@ export default function ProductsPage() {
     setPrice('');
     setCategoryId('');
     setSizes([]);
-    setTrackStock(false);
-    setStock('');
     setError('');
     setModalOpen(true);
   }
@@ -55,9 +63,7 @@ export default function ProductsPage() {
     setName(product.name);
     setPrice(String(product.price));
     setCategoryId(product.categoryId || '');
-    setSizes(product.sizes || []);
-    setTrackStock(product.trackStock || false);
-    setStock(product.stock != null ? String(product.stock) : '');
+    setSizes((product.sizes || []) as { name: string; price: number }[]);
     setError('');
     setModalOpen(true);
   }
@@ -74,7 +80,6 @@ export default function ProductsPage() {
       return;
     }
 
-    // Validate sizes if any
     if (sizes.length > 0) {
       for (const size of sizes) {
         if (!size.name.trim() || size.price <= 0) {
@@ -84,31 +89,71 @@ export default function ProductsPage() {
       }
     }
 
-    const productData = {
+    const productData: ProductFormData = {
       name: name.trim(),
       price: p,
-      categoryId: categoryId || undefined,
-      sizes: sizes.length > 0 ? sizes : undefined,
-      trackStock,
-      stock: trackStock ? (parseInt(stock) || 0) : undefined,
+      categoryId: categoryId || null,
+      sizes: sizes.map((s, i) => ({
+        id: crypto.randomUUID(),
+        name: s.name,
+        price: s.price,
+        sortOrder: i,
+      })),
     };
 
     if (editing) {
-      updateProduct(editing.id, productData);
+      updateProduct.mutate(
+        { id: editing.id, data: { ...productData, categoryId: productData.categoryId || undefined } },
+        {
+          onSuccess: () => setModalOpen(false),
+          onError: (err) => {
+            if (err instanceof ApiError) {
+              setError(err.message || 'فشل تحديث المنتج.');
+              return;
+            }
+            setError('فشل تحديث المنتج.');
+          },
+        }
+      );
     } else {
-      addProduct(productData);
+      const createdAt = new Date().toISOString();
+      createProduct.mutate(
+        {
+          id: crypto.randomUUID(),
+          createdAt,
+          ...productData,
+          categoryId: productData.categoryId || undefined,
+        },
+        {
+          onSuccess: () => setModalOpen(false),
+          onError: (err) => {
+            if (err instanceof ApiError) {
+              setError(err.message || 'فشل إنشاء المنتج.');
+              return;
+            }
+            setError('فشل إنشاء المنتج.');
+          },
+        }
+      );
     }
-    setModalOpen(false);
   }
 
   function handleDelete() {
     if (deleteTarget) {
-      deleteProduct(deleteTarget.id);
-      setDeleteTarget(null);
+      deleteProduct.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
     }
   }
 
-  if (loading) {
+  function handleAddCategory() {
+    if (newCatName.trim()) {
+      createCategory.mutate(
+        { id: crypto.randomUUID(), name: newCatName.trim() },
+        { onSuccess: () => setNewCatName('') }
+      );
+    }
+  }
+
+  if (productsLoading || categoriesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin" />
@@ -118,22 +163,12 @@ export default function ProductsPage() {
 
   return (
     <div>
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">المنتجات</h1>
           <p className="text-sm text-gray-500 mt-1">{products.length} منتج في الكتالوج</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setBulkStockOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-            </svg>
-            تحديث المخزون
-          </button>
           <button
             onClick={openAdd}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200"
@@ -146,7 +181,6 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Categories Management */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-3">التصنيفات</h2>
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
@@ -172,28 +206,22 @@ export default function ProductsPage() {
               onChange={(e) => setNewCatName(e.target.value)}
               className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && newCatName.trim()) {
-                  addCategory(newCatName.trim());
-                  setNewCatName('');
+                if (e.key === 'Enter') {
+                  handleAddCategory();
                 }
               }}
             />
             <button
-              onClick={() => {
-                if (newCatName.trim()) {
-                  addCategory(newCatName.trim());
-                  setNewCatName('');
-                }
-              }}
-              className="px-3 py-2 bg-stone-800 text-white text-sm font-medium rounded-xl hover:bg-stone-700 transition-colors"
+              onClick={handleAddCategory}
+              disabled={createCategory.isPending}
+              className="px-3 py-2 bg-stone-800 text-white text-sm font-medium rounded-xl hover:bg-stone-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              إضافة
+              {createCategory.isPending ? '...' : 'إضافة'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Search and Filter */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="relative flex-1">
           <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -223,7 +251,6 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Table / Empty */}
       {filtered.length === 0 ? (
         <EmptyState
           icon="📦"
@@ -239,7 +266,6 @@ export default function ProductsPage() {
                 <tr className="border-b border-gray-100">
                   <th className="text-right px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">المنتج</th>
                   <th className="text-right px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">السعر</th>
-                  <th className="text-right px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">المخزون</th>
                   <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">إجراءات</th>
                 </tr>
               </thead>
@@ -250,43 +276,13 @@ export default function ProductsPage() {
                       <p className="font-medium text-gray-900">{product.name}</p>
                       {product.categoryId && (
                         <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">
-                          {categories.find(c => c.id === product.categoryId)?.name || 'تصنيف محذوف'}
+                          {(product as { category_name?: string }).category_name || categories.find(c => c.id === product.categoryId)?.name || 'تصنيف محذوف'}
                         </span>
                       )}
                     </td>
                     <td className="px-6 py-4 font-semibold text-gray-900">{formatCurrency(product.price)}</td>
-                    <td className="px-6 py-4 hidden sm:table-cell">
-                      {product.trackStock ? (
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                            (product.stock || 0) <= 0
-                              ? 'bg-red-100 text-red-700'
-                              : (product.stock || 0) <= 5
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-emerald-100 text-emerald-700'
-                          }`}>
-                            {product.stock || 0}
-                          </span>
-                          <div className="flex gap-0.5">
-                            <button
-                              onClick={() => adjustStock(product.id, -1)}
-                              className="w-6 h-6 flex items-center justify-center rounded bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 text-xs font-bold transition-colors"
-                              title="نقص"
-                            >−</button>
-                            <button
-                              onClick={() => adjustStock(product.id, 1)}
-                              className="w-6 h-6 flex items-center justify-center rounded bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-600 text-xs font-bold transition-colors"
-                              title="زيادة"
-                            >+</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </td>
                     <td className="px-6 py-4 text-left">
                       <div className="flex items-center justify-start gap-1">
-                        {/* Sell quick-action */}
                         <Link
                           to={`/new-order?product=${encodeURIComponent(product.name)}`}
                           className="hidden group-hover:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors border border-violet-100"
@@ -298,8 +294,9 @@ export default function ProductsPage() {
                           بيع
                         </Link>
                         <button
-                          onClick={() => openEdit(product)}
-                          className="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                          onClick={() => openEdit(product as Product)}
+                          disabled={updateProduct.isPending}
+                          className="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           title="تعديل"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -307,8 +304,9 @@ export default function ProductsPage() {
                           </svg>
                         </button>
                         <button
-                          onClick={() => setDeleteTarget(product)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          onClick={() => setDeleteTarget(product as Product)}
+                          disabled={deleteProduct.isPending}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           title="حذف"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -325,7 +323,6 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Add/Edit Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'تعديل المنتج' : 'إضافة منتج'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -424,34 +421,7 @@ export default function ProductsPage() {
             </div>
           </div>
 
-          {/* Stock Tracking */}
-          <div className="pt-2 border-t border-gray-100">
-            <div className="flex items-center gap-3 mb-2">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={trackStock}
-                  onChange={(e) => setTrackStock(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-violet-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
-              </label>
-              <span className="text-sm font-medium text-gray-700">تتبع المخزون</span>
-            </div>
-            {trackStock && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">الكمية الحالية</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={stock}
-                  onChange={(e) => setStock(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  placeholder="0"
-                />
-              </div>
-            )}
-          </div>
+          <div className="pt-2 border-t border-gray-100" />
           <div className="flex gap-3 justify-start pt-2">
             <button
               type="button"
@@ -462,15 +432,15 @@ export default function ProductsPage() {
             </button>
             <button
               type="submit"
-              className="px-4 py-2.5 text-sm font-medium text-white bg-violet-600 rounded-xl hover:bg-violet-700 transition-colors"
+              disabled={createProduct.isPending || updateProduct.isPending}
+              className="px-4 py-2.5 text-sm font-medium text-white bg-violet-600 rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {editing ? 'تحديث' : 'إضافة منتج'}
+              {editing ? (updateProduct.isPending ? '...' : 'تحديث') : (createProduct.isPending ? '...' : 'إضافة منتج')}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* Delete confirmation */}
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
@@ -481,27 +451,18 @@ export default function ProductsPage() {
         danger
       />
 
-      {/* Bulk Stock Modal */}
-      <BulkStockModal
-        open={bulkStockOpen}
-        onClose={() => setBulkStockOpen(false)}
-        products={products}
-        categories={categories}
-        onApply={bulkSetStock}
-      />
-
-      {/* Category Delete Confirmation */}
       <ConfirmDialog
         open={!!deleteCatTarget}
         onClose={() => setDeleteCatTarget(null)}
         onConfirm={() => {
           if (deleteCatTarget) {
-            const success = deleteCategory(deleteCatTarget.id);
-            if (!success) {
-              setCatError('لا يمكن حذف هذا التصنيف لأنه مرتبط بمنتجات.');
-              setTimeout(() => setCatError(''), 4000);
-            }
-            setDeleteCatTarget(null);
+            deleteCategory.mutate(deleteCatTarget.id, {
+              onError: () => {
+                setCatError('لا يمكن حذف هذا التصنيف لأنه مرتبط بمنتجات.');
+                setTimeout(() => setCatError(''), 4000);
+              },
+              onSuccess: () => setDeleteCatTarget(null),
+            });
           }
         }}
         title="حذف التصنيف"
@@ -510,7 +471,6 @@ export default function ProductsPage() {
         danger
       />
 
-      {/* Category error toast */}
       {catError && (
         <div className="fixed bottom-4 right-4 z-50 px-4 py-3 bg-red-50 text-red-700 rounded-xl text-sm font-medium shadow-lg border border-red-200 animate-fade-in flex items-center gap-2">
           <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

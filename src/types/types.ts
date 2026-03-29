@@ -5,12 +5,10 @@ export interface Product {
   categoryId?: string;
   sizes?: { name: string; price: number }[];
   createdAt: string;
-  stock?: number;
-  trackStock?: boolean;
 }
 
 export interface OrderItem {
-  productId: string;
+  productId?: string;
   name: string;
   price: number;
   quantity: number;
@@ -94,7 +92,6 @@ export interface Database {
   activityLog: ActivityLog[];
   settings: StoreSettings;
   debtors: Debtor[];
-  lastStockReset?: string;  // ISO date string — stored in db.json to track daily stock reset
 }
 
 export interface CashTransaction {
