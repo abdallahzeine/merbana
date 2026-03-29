@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E '\\\\.\\(sh|spec|txt|ini|conf|yaml|yml\\)$')",
+      "Bash(find /c/Users/abdallahzeine/Desktop/repo-kimi/Deployment -type f \\\\\\(-name *.py -o -name *.sh -o -name *.ini -o -name *.json -o -name *.yaml -o -name *.yml -o -name *.txt -o -name *.md -o -name README* \\\\\\))"
+    ]
+  }
+}
