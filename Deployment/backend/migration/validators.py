@@ -307,6 +307,23 @@ def validate_and_prepare(payload: dict[str, Any]) -> ValidationResult:
             )
             continue
         normalized = _camel_to_snake_record(raw, {"orderId": "order_id", "userId": "user_id"})
+
+        # Old JSON stored withdrawals as negative amounts; new schema requires amount > 0.
+        raw_amount = normalized.get("amount")
+        if isinstance(raw_amount, (int, float)):
+            if raw_amount < 0:
+                normalized = {**normalized, "amount": abs(raw_amount)}
+            elif raw_amount == 0:
+                issues.append(
+                    ValidationIssue(
+                        "cash_transactions",
+                        raw.get("id"),
+                        "amount",
+                        "Zero-amount transaction skipped",
+                    )
+                )
+                continue
+
         try:
             rec = CashTransactionCreate.model_validate(normalized)
             prepared.cash_transactions.append(rec.model_dump())
@@ -395,6 +412,12 @@ def validate_and_prepare(payload: dict[str, Any]) -> ValidationResult:
         "debtors": len(debtors_raw),
     }
 
-    has_hard_failures = len(issues) > 0
+    # Only structural issues are hard failures that abort the migration.
+    # Individual record validation errors are soft — the record is logged and skipped.
+    structural_issues = [
+        i for i in issues
+        if i.entity == "root" or i.field_path == "id"
+    ]
+    has_hard_failures = len(structural_issues) > 0
 
     return ValidationResult(prepared=prepared, issues=issues, has_hard_failures=has_hard_failures)

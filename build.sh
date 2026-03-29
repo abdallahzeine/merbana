@@ -220,6 +220,7 @@ auto_migrate_json() {
   local json_dst="${DATA_DIR}/data.json"
   cp "${json_src}" "${json_dst}"
 
+  PYTHONPATH="${POS_APP_DIR}" \
   MERBANA_DATA_PATH="${DATA_DIR}" \
     "${VENV_DIR}/bin/python" "${MIGRATION_SCRIPT_DST}" \
       --source "${json_dst}" \
