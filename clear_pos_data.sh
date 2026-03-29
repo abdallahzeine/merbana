@@ -20,22 +20,24 @@ fail() { echo -e "${RED}[ERROR] $*${RESET}" >&2; exit 1; }
 POS_DIR="${POS_DIR:-$HOME/Desktop/POS}"
 DB="${POS_DIR}/data/merbana.db"
 BACKUP_DIR="${POS_DIR}/backups"
+PYTHON="${POS_DIR}/.venv/bin/python"
 
 [[ -f "${DB}" ]] || fail "Database not found: ${DB}"
+[[ -x "${PYTHON}" ]] || fail "Python venv not found: ${PYTHON}"
 
 # ── Show current row counts ────────────────────────────────────────────────────
 show_counts() {
-  sqlite3 "${DB}" <<'SQL'
-.mode column
-.headers on
-SELECT 'orders'            AS "table", COUNT(*) AS rows FROM orders
-UNION ALL
-SELECT 'order_items',                  COUNT(*)        FROM order_items
-UNION ALL
-SELECT 'cash_transactions',            COUNT(*)        FROM cash_transactions
-UNION ALL
-SELECT 'debtors',                      COUNT(*)        FROM debtors;
-SQL
+  "${PYTHON}" - "${DB}" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+tables = ["orders", "order_items", "cash_transactions", "debtors"]
+print(f"  {'table':<25} {'rows':>6}")
+print(f"  {'-'*25} {'-'*6}")
+for t in tables:
+    n = db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+    print(f"  {t:<25} {n:>6}")
+db.close()
+PY
 }
 
 echo
@@ -59,15 +61,17 @@ ok "Backup saved: ${backup_path}"
 
 # ── Clear tables ──────────────────────────────────────────────────────────────
 info "Clearing tables..."
-sqlite3 "${DB}" <<'SQL'
-PRAGMA foreign_keys = ON;
-BEGIN;
-DELETE FROM order_items;
-DELETE FROM cash_transactions;
-DELETE FROM orders;
-DELETE FROM debtors;
-COMMIT;
-SQL
+"${PYTHON}" - "${DB}" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("PRAGMA foreign_keys = ON")
+db.execute("DELETE FROM order_items")
+db.execute("DELETE FROM cash_transactions")
+db.execute("DELETE FROM orders")
+db.execute("DELETE FROM debtors")
+db.commit()
+db.close()
+PY
 
 ok "Tables cleared."
 
