@@ -243,12 +243,26 @@ APP_DIR="${POS_DIR}/app"
 DATA_DIR="${POS_DIR}/data"
 DIST_DIR="${POS_DIR}/dist"
 LOG_FILE="${DATA_DIR}/launcher.log"
+PID_FILE="${DATA_DIR}/merbana.pid"
 HOST="127.0.0.1"
 PORT="${MERBANA_PORT:-8741}"
 
 VENV_PY="${VENV_DIR}/bin/python"
 
 mkdir -p "${DATA_DIR}"
+
+# If a PID file exists and the process is still alive, just open the browser.
+if [[ -f "${PID_FILE}" ]]; then
+  existing_pid="$(cat "${PID_FILE}")"
+  if kill -0 "${existing_pid}" 2>/dev/null; then
+    echo "Merbana already running (PID ${existing_pid}) — opening browser."
+    xdg-open "http://${HOST}:${PORT}" || echo "Open http://${HOST}:${PORT} in your browser."
+    exit 0
+  else
+    # Stale PID file — process is gone, clean up and start fresh.
+    rm -f "${PID_FILE}"
+  fi
+fi
 
 MERBANA_DIST_PATH="${DIST_DIR}" \
 MERBANA_DATA_PATH="${DATA_DIR}" \
@@ -257,11 +271,14 @@ nohup "${VENV_PY}" -m uvicorn backend.app:app \
   --host "${HOST}" --port "${PORT}" \
   --app-dir "${APP_DIR}" > "${LOG_FILE}" 2>&1 &
 
+echo $! > "${PID_FILE}"
+
 timeout=30
 until curl -s "http://${HOST}:${PORT}/api/health" | grep -q '"status":'; do
   timeout=$((timeout-1))
   if [ "${timeout}" -le 0 ]; then
     echo "Backend failed to start. Check ${LOG_FILE} for details."
+    rm -f "${PID_FILE}"
     exit 1
   fi
   sleep 1
